@@ -1,0 +1,28 @@
+# ---------- 构建产物 ----------
+# build.ps1 的输出目录（可执行文件、打包好的 zip、文档副本）
+dist/
+# 发布归档（版本包请放 GitHub Releases，不进仓库）
+releases/
+
+# ---------- 测试工程的本地副本 ----------
+# build.ps1 每次编译前会从 libs\ 复制过来
+tests/*.dll
+tests/*.exe
+tests/out/
+
+# ---------- .NET / VS 临时文件 ----------
+*.pdb
+*.user
+*.suo
+.vs/
+obj/
+bin/
+
+# ---------- 工作区数据 ----------
+# WorkBuddy 会话/记忆数据，与程序无关
+.workbuddy/
+
+# ---------- 系统与编辑器 ----------
+Thumbs.db
+desktop.ini
+.DS_Store

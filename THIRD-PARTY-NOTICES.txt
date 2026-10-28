@@ -1,0 +1,25 @@
+EasyLabel 标签轻松打 — 第三方组件说明
+======================================
+
+本程序包含以下开源组件。完整许可证文本位于 LICENSES 目录。
+
+1. ZXing.Net 0.16.11
+   - 用途：Code 128 / Code 39 / EAN-13 / QR Code 的生成与识读
+   - 许可证：Apache License 2.0
+   - 项目主页：https://github.com/micjahn/ZXing.Net
+   - 许可证全文：LICENSES/Apache-2.0.txt
+
+2. ExcelDataReader 3.9.0
+   - 用途：读取 .xls / .xlsx 文件
+   - 许可证：MIT License
+   - 项目主页：https://github.com/ExcelDataReader/ExcelDataReader
+   - 许可证全文：LICENSES/MIT-ExcelDataReader.txt
+
+其他说明
+--------
+- 本程序输出 ZPL II 指令，不包含任何打印机厂商的驱动或固件。
+- .NET Framework 4.8 是 Microsoft 的运行时组件，未随本程序重新分发。
+- ZXing.Net、ExcelDataReader 的版权归其各自作者所有。
+- 文中出现的打印机型号、厂商名称与商标归其各自所有者所有，仅用于说明兼容性。
+- 标签内容、Excel 数据只在本机处理；本程序不包含网络上传功能。
+- 本程序自身的版权归 EasyLabel 所有，详见程序内“关于与版权”页。
