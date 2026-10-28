@@ -2,8 +2,8 @@
     "version":  "1.6.1",
     "releaseDate":  "2026-10-29",
     "url":  "https://github.com/yuguod/EasyLabel/releases/download/v1.6.1/EasyLabel-1.6.1-update.zip",
-    "sha256":  "0d89eb1766ae386d8a52a6bcc3fe08baa70fb9b255e5fbffc9bba3b0904eabc9",
+    "sha256":  "f7aefe9b79ce4aa7867c642ab7948113de53bb727fc507cba2c2fd70d6aafb78",
     "size":  1754920,
     "mandatory":  false,
-    "notes":  "v1.6.1\n\n· 更新地址改为 GitHub Release 发布页：默认直接读 releases/latest，不再依赖 raw.githubusercontent.com，国内网络下也能检查更新。\n· 更新地址支持直接粘贴仓库主页、发布页或某个 Release 页面，程序自动换算。\n· 默认地址不可用时自动改用仓库里的 update.json 再试一次。\n· 安装程序界面重做：卡片式布局、分阶段进度条与完成状态，200% 缩放下不再重叠或裁切。\n· 卸载改为独立窗口，用勾选框决定是否保留设置与模版。"
+    "notes":  "v1.6.1\n\n· 更新地址改为 GitHub Release 发布页：默认直接读 releases/latest，不再依赖 raw.githubusercontent.com，国内网络下也能检查更新。\n· 更新地址支持直接粘贴仓库主页、发布页或某个 Release 页面，程序自动换算。\n· 默认地址不可用时自动改用仓库里的 update.json 再试一次。\n· 安装程序界面重做：卡片式布局、分阶段进度条与完成状态，200% 缩放下不再重叠或裁切。\n· 卸载改为独立窗口，用勾选框决定是否保留设置与模版。\n· 从 1.6.0 升级：如果旧版一直“检查更新失败”，直接运行本版本的安装包覆盖安装一次即可，之后会自动改用 Release 接口。"
 }
