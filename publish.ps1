@@ -61,8 +61,11 @@ function Run([string]$exe, [string[]]$exeArgs) {
     $old = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $exe @exeArgs
-        return $LASTEXITCODE
+        # 输出直接送宿主，避免被当成函数返回值（gh 会打印 URL）
+        & $exe @exeArgs | Out-Host
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 1 }
+        return [int]$code
     }
     finally { $ErrorActionPreference = $old }
 }
@@ -76,6 +79,19 @@ function Quiet([string]$exe, [string[]]$exeArgs) {
         return $LASTEXITCODE
     }
     finally { $ErrorActionPreference = $old }
+}
+
+# 网络不稳时的重试包装（上传大文件常见 502）
+function RunRetry([string]$exe, [string[]]$exeArgs, [int]$times = 3, [int]$waitSeconds = 5) {
+    for ($i = 1; $i -le $times; $i++) {
+        $code = Run $exe $exeArgs
+        if ($code -eq 0) { return 0 }
+        if ($i -lt $times) {
+            Warn ("第 {0} 次调用失败（exit={1}），{2} 秒后重试" -f $i, $code, $waitSeconds)
+            if (-not $DryRun) { Start-Sleep -Seconds $waitSeconds }
+        }
+    }
+    return 1
 }
 
 # ---------------------------------------------------------------- 版本号
@@ -165,12 +181,22 @@ $tagCommit = ((& $Git rev-parse --verify --quiet "refs/tags/$tag^{commit}" 2>&1)
 $tagCode = $LASTEXITCODE
 $ErrorActionPreference = $old
 $tagExists = ($tagCode -eq 0 -and $tagCommit -match '^[0-9a-f]{40}$')
+$pushTag = $true
 if ($tagExists) {
-    $tagCommit = $tagCommit.Trim()
-    if ($tagCommit -ne $head) {
-        Fail "标签 $tag 已存在，指向 $($tagCommit.Substring(0,7))，与当前 HEAD 不一致。`n  确认后执行：git tag -d $tag ; git push origin :refs/tags/$tag"
+    if ($tagCommit -eq $head) {
+        Write-Host "  标签 $tag 已存在且指向 HEAD"
     }
-    Write-Host "  标签 $tag 已存在且指向 HEAD"
+    else {
+        # 标签指向 HEAD 的祖先：说明发布之后又提交了文档之类，允许只刷新附件与说明
+        if ((Quiet $Git @('merge-base', '--is-ancestor', $tagCommit, 'HEAD')) -eq 0) {
+            $ahead = ((& $Git rev-list --count "$tagCommit..HEAD") -join '').Trim()
+            Warn "标签 $tag 指向 $($tagCommit.Substring(0,7))，比 HEAD 早 $ahead 个提交；本次只更新 Release 说明与附件"
+            $pushTag = $false
+        }
+        else {
+            Fail "标签 $tag 指向 $($tagCommit.Substring(0,7))，与当前 HEAD 不在同一条历史线上。`n  确认后执行：git tag -d $tag ; git push origin :refs/tags/$tag"
+        }
+    }
 }
 else {
     Write-Host "  标签 $tag 需要新建"
@@ -183,8 +209,13 @@ if (-not $SkipPush) {
     Step '推送提交与标签'
     $code = Run $Git @('push', 'origin', "HEAD:refs/heads/$branch")
     if ($code -ne 0) { Fail "推送分支失败（exit=$code）" }
-    $code = Run $Git @('push', 'origin', "refs/tags/$tag")
-    if ($code -ne 0) { Fail "推送标签失败（exit=$code）" }
+    if ($pushTag) {
+        $code = Run $Git @('push', 'origin', "refs/tags/$tag")
+        if ($code -ne 0) { Fail "推送标签失败（exit=$code）" }
+    }
+    else {
+        Write-Host "  标签已在远端，跳过"
+    }
 }
 else {
     Warn '已指定 -SkipPush，跳过推送'
@@ -202,8 +233,17 @@ if (-not $notes) { $notes = "EasyLabel $tag" }
 $lines = @()
 $lines += '## 本次更新'
 $lines += ''
-foreach ($line in ($notes -split "`r?`n")) {
-    if ($line -match "^\s*$tag\s*$") { continue }
+
+# notes 通常以「v1.6.0 + 空行」开头，先去掉开头的版本号行和空行，避免正文里出现空档
+$rawLines = @($notes -split "`r?`n")
+$start = 0
+while ($start -lt $rawLines.Count) {
+    $probe = $rawLines[$start].Trim()
+    if ($probe -eq '' -or $probe -eq $tag) { $start++ } else { break }
+}
+$rawLines = @($rawLines | Select-Object -Skip $start)
+
+foreach ($line in $rawLines) {
     if ($line -match '^\s*·\s*') { $lines += ('- ' + $line.TrimStart(" $([char]0xB7)").Trim()) }
     else { $lines += $line }
 }
@@ -242,7 +282,7 @@ else {
     Step "Release $tag 已存在，更新说明并覆盖附件"
     $code = Run $Gh @('release', 'edit', $tag, '--notes-file', $bodyFile)
     if ($code -ne 0) { Fail "更新 Release 说明失败（exit=$code）" }
-    $code = Run $Gh (@('release', 'upload', $tag) + $assets + @('--clobber'))
+    $code = RunRetry $Gh (@('release', 'upload', $tag) + $assets + @('--clobber')) 3 8
     if ($code -ne 0) { Fail "上传附件失败（exit=$code）" }
 }
 

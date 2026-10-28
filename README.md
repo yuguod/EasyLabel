@@ -431,8 +431,8 @@ gh auth login --hostname github.com
 - 检查 `releases/` 里 4 个产物是否齐，缺哪个直接报出来；
 - 校验 `update.json` 的 `version`、`sha256` 与更新包是否一致、`url` 是否指向本次 tag——不一致就中止，避免发出“下载完校验不过”的更新包；
 - 版本号默认读 `src/AssemblyInfo.cs`，与 `build.ps1` 同源；
-- 标签已存在但指向别的提交时中止，并给出 `git tag -d` / `git push origin :refs/tags/…` 的修复命令；
-- Release 已存在时改为覆盖附件（`--clobber`）并刷新说明，所以重跑是安全的；
+- 标签已存在但指向别的提交时中止，并给出 `git tag -d` / `git push origin :refs/tags/…` 的修复命令；若标签只是比 HEAD 落后（例如发布后又提交了文档），则只刷新附件与说明，不动标签；
+- Release 已存在时改为覆盖附件（`--clobber`）并刷新说明，所以重跑是安全的；上传失败会自动重试 3 次；
 - 发布说明由 `update.json` 的 `notes` 生成，自动补上文件表格与 SHA-256；
 - 结束时用 `gh release view` 回读线上附件数量与大小，附上 Release 地址。
 
