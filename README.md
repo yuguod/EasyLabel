@@ -378,6 +378,7 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 - .NET Framework 4.8
 - 项目内 `tools/roslyn/csc.exe`（Roslyn 编译器）
 - `libs/zxing.dll`、`libs/ExcelDataReader.dll`（已随源码提供）
+- GitHub CLI（`gh`，仅发布新版本时需要，构建不需要）
 
 构建：
 
@@ -403,9 +404,37 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 
 发布新版本时的顺序：
 
-1. 改 `src/AssemblyInfo.cs` 的版本号、更新 `update.json` 里的 `notes` 与 `releaseDate`；
-2. 跑 `build.ps1`，把 `releases/` 里的 4 个文件（Setup.exe、win64.zip、update.zip、update.json）上传到 GitHub Releases（tag 形如 `v1.6.0`）；
-3. 把 `dist/update.json` 提交到仓库根目录并推送——客户端默认从这里取清单。
+1. 改 `src/AssemblyInfo.cs` 的版本号，更新 `update.json` 里的 `notes` 与 `releaseDate`；
+2. `.\build.ps1 -Tests`：编译、跑测试、产出三种包，并生成带 SHA-256 的 `dist/update.json`；
+3. 把 `dist/update.json` 覆盖到仓库根目录（客户端默认从这里取清单），连同代码一起提交；
+4. `.\publish.ps1`：打标签、推送、建 Release、上传 4 个附件。
+
+第 4 步依赖 GitHub CLI，装一次、登录一次即可：
+
+```powershell
+winget install --id GitHub.cli
+gh auth login --hostname github.com
+```
+
+`publish.ps1` 可用的参数：
+
+```powershell
+.\publish.ps1                      # 发布 AssemblyInfo 里的版本号
+.\publish.ps1 -DryRun              # 只检查并打印将要执行的命令，不动远端
+.\publish.ps1 -Draft               # 发成草稿
+.\publish.ps1 -Version 1.7.0       # 指定版本（须已有对应产物）
+.\publish.ps1 -NotesFile docs\v1.7.0.md   # 用独立文件写更新说明
+```
+
+脚本自己会做这些事：
+
+- 检查 `releases/` 里 4 个产物是否齐，缺哪个直接报出来；
+- 校验 `update.json` 的 `version`、`sha256` 与更新包是否一致、`url` 是否指向本次 tag——不一致就中止，避免发出“下载完校验不过”的更新包；
+- 版本号默认读 `src/AssemblyInfo.cs`，与 `build.ps1` 同源；
+- 标签已存在但指向别的提交时中止，并给出 `git tag -d` / `git push origin :refs/tags/…` 的修复命令；
+- Release 已存在时改为覆盖附件（`--clobber`）并刷新说明，所以重跑是安全的；
+- 发布说明由 `update.json` 的 `notes` 生成，自动补上文件表格与 SHA-256；
+- 结束时用 `gh release view` 回读线上附件数量与大小，附上 Release 地址。
 
 测试：
 
