@@ -33,6 +33,10 @@ namespace EasyLabel.Core
         public TextAlign TextAlign { get; set; }
         public string LastFolder { get; set; }
         public string LastImportFolder { get; set; }
+        public bool AutoCheckUpdate { get; set; }
+        public string UpdateFeedUrl { get; set; }
+        public string LastUpdateCheck { get; set; }
+        public string LastNotifiedVersion { get; set; }
 
         public AppSettings()
         {
@@ -61,6 +65,10 @@ namespace EasyLabel.Core
             TextAlign = TextAlign.Center;
             LastFolder = "";
             LastImportFolder = "";
+            AutoCheckUpdate = true;
+            UpdateFeedUrl = "";
+            LastUpdateCheck = "";
+            LastNotifiedVersion = "";
         }
 
         public static bool Portable
@@ -164,6 +172,10 @@ namespace EasyLabel.Core
                 settings.TextAlign = (TextAlign)GetInt(root, "TextAlign", (int)settings.TextAlign);
                 settings.LastFolder = Get(root, "LastFolder", settings.LastFolder);
                 settings.LastImportFolder = Get(root, "LastImportFolder", settings.LastImportFolder);
+                settings.AutoCheckUpdate = GetBool(root, "AutoCheckUpdate", settings.AutoCheckUpdate);
+                settings.UpdateFeedUrl = Get(root, "UpdateFeedUrl", settings.UpdateFeedUrl);
+                settings.LastUpdateCheck = Get(root, "LastUpdateCheck", settings.LastUpdateCheck);
+                settings.LastNotifiedVersion = Get(root, "LastNotifiedVersion", settings.LastNotifiedVersion);
 
                 // v1.1 起默认 600 dpi 机型；旧设置文件只迁移一次，统一到 600。
                 if (settings.SettingsVersion < 2)
@@ -211,7 +223,11 @@ namespace EasyLabel.Core
                     new XElement("SettingsVersion", 2),
                     new XElement("TextAlign", (int)TextAlign),
                     new XElement("LastFolder", Safe(LastFolder)),
-                    new XElement("LastImportFolder", Safe(LastImportFolder))
+                    new XElement("LastImportFolder", Safe(LastImportFolder)),
+                    new XElement("AutoCheckUpdate", AutoCheckUpdate),
+                    new XElement("UpdateFeedUrl", Safe(UpdateFeedUrl)),
+                    new XElement("LastUpdateCheck", Safe(LastUpdateCheck)),
+                    new XElement("LastNotifiedVersion", Safe(LastNotifiedVersion))
                 );
                 new XDocument(root).Save(SettingsPath);
             }
@@ -247,6 +263,9 @@ namespace EasyLabel.Core
             if (PrinterName == null) PrinterName = "";
             if (LastFolder == null) LastFolder = "";
             if (LastImportFolder == null) LastImportFolder = "";
+            if (UpdateFeedUrl == null) UpdateFeedUrl = "";
+            if (LastUpdateCheck == null) LastUpdateCheck = "";
+            if (LastNotifiedVersion == null) LastNotifiedVersion = "";
         }
 
         public LabelSpec GetLabelSpec()

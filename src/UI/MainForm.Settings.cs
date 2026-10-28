@@ -36,6 +36,8 @@ namespace EasyLabel.UI
         private NumericUpDown _settingsBarcodeScale;
         private NumericUpDown _settingsQrScale;
         private Button _testPrint;
+        private CheckBox _autoCheckUpdate;
+        private TextBox _updateFeed;
         private bool _settingsUiLoaded;
 
         private Panel BuildSettingsPage()
@@ -48,6 +50,7 @@ namespace EasyLabel.UI
             BuildPrinterCard(flow);
             BuildPrintCard(flow);
             BuildDefaultsCard(flow);
+            BuildUpdateCard(flow);
             BuildMaintenanceCard(flow);
             _pageLayouts.Add(() => UiKit.FitCardWidths(flow));
             return page;
@@ -288,6 +291,68 @@ namespace EasyLabel.UI
             card.Content.Controls.Add(table);
         }
 
+        private void BuildUpdateCard(FlowLayoutPanel flow)
+        {
+            var card = AddCard(flow, "软件更新", 206);
+            var table = UiKit.FormTable(4);
+
+            _autoCheckUpdate = UiKit.Check("启动时自动检查更新（每天最多一次）", _settings.AutoCheckUpdate);
+            _autoCheckUpdate.CheckedChanged += (s, e) =>
+            {
+                if (_loadingUi) return;
+                _settings.AutoCheckUpdate = _autoCheckUpdate.Checked;
+            };
+            table.Controls.Add(_autoCheckUpdate, 0, 0);
+            table.SetColumnSpan(_autoCheckUpdate, 2);
+
+            _updateFeed = UiKit.TextBox(false, 28);
+            _updateFeed.Dock = DockStyle.Fill;
+            _updateFeed.Text = _settings.UpdateFeedUrl ?? "";
+            _updateFeed.TextChanged += (s, e) =>
+            {
+                if (_loadingUi) return;
+                _settings.UpdateFeedUrl = (_updateFeed.Text ?? "").Trim();
+            };
+            UiKit.AddRow(table, 1, "更新地址", _updateFeed, false, true);
+
+            var hint = Theme.Label(
+                "留空使用默认地址：" + UpdateService.DefaultFeedUrl + "\r\n" +
+                "企业内网可把 update.json 与更新包放在内部服务器，这里填对应的清单地址。",
+                8.3f, Theme.Muted);
+            hint.AutoSize = false;
+            hint.Dock = DockStyle.Fill;
+            hint.MinimumSize = new Size(0, 44);
+            hint.Margin = new Padding(0, 8, 0, 2);
+            table.Controls.Add(hint, 0, 2);
+            table.SetColumnSpan(hint, 2);
+
+            var row = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Height = 42,
+                FlowDirection = FlowDirection.LeftToRight,
+                BackColor = Theme.Card
+            };
+            var check = UiKit.SecondaryButton("立即检查更新");
+            check.Width = 122;
+            check.Margin = new Padding(0, 3, 8, 0);
+            check.Click += (s, e) => OpenUpdateDialog();
+            var reset = UiKit.LinkButton("恢复默认地址");
+            reset.Margin = new Padding(0, 8, 0, 0);
+            reset.Click += (s, e) =>
+            {
+                _updateFeed.Text = "";
+                _settings.UpdateFeedUrl = "";
+                SetStatus("更新地址已恢复为默认", false, false);
+            };
+            row.Controls.Add(check);
+            row.Controls.Add(reset);
+            table.Controls.Add(row, 0, 3);
+            table.SetColumnSpan(row, 2);
+
+            card.Content.Controls.Add(table);
+        }
+
         private void BuildMaintenanceCard(FlowLayoutPanel flow)
         {
             var card = AddCard(flow, "维护与关于", 210);
@@ -358,6 +423,8 @@ namespace EasyLabel.UI
                 _settingsBold.Checked = _settings.DefaultBold;
                 _settingsBarcodeScale.Value = Math.Max(70, Math.Min(130, _settings.BarcodeHeightPercent));
                 _settingsQrScale.Value = Math.Max(70, Math.Min(130, _settings.QrSizePercent));
+                if (_autoCheckUpdate != null) _autoCheckUpdate.Checked = _settings.AutoCheckUpdate;
+                if (_updateFeed != null) _updateFeed.Text = _settings.UpdateFeedUrl ?? "";
                 UpdateNetworkState();
                 UpdatePrinterHint();
                 _settingsUiLoaded = true;
@@ -403,6 +470,8 @@ namespace EasyLabel.UI
             _settings.DefaultBold = _settingsBold.Checked;
             _settings.BarcodeHeightPercent = (int)_settingsBarcodeScale.Value;
             _settings.QrSizePercent = (int)_settingsQrScale.Value;
+            if (_autoCheckUpdate != null) _settings.AutoCheckUpdate = _autoCheckUpdate.Checked;
+            if (_updateFeed != null) _settings.UpdateFeedUrl = (_updateFeed.Text ?? "").Trim();
             _settings.Normalize();
         }
 

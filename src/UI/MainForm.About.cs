@@ -72,7 +72,7 @@ namespace EasyLabel.UI
                 table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             int row = 0;
-            AddInfoRow(table, row++, "版本", "v" + AppInfo.Version + " · 绿色免安装版");
+            AddInfoRow(table, row++, "版本", "v" + AppInfo.Version + " · " + EditionText());
             AddInfoRow(table, row++, "发布日期", AppInfo.ReleaseDate);
             AddInfoRow(table, row++, "作者", AppInfo.Author);
             AddLinkRow(table, row++, "项目地址", AppInfo.ProjectUrl, AppInfo.ProjectUrl);
@@ -86,15 +86,19 @@ namespace EasyLabel.UI
                 WrapContents = true,
                 BackColor = Theme.Card
             };
+            var update = UiKit.PrimaryButton(string.IsNullOrEmpty(_availableVersion) ? "检查更新" : "更新到 " + _availableVersion);
+            update.Width = 104;
+            update.Click += (s, e) => OpenUpdateDialog();
             var notices = UiKit.SecondaryButton("第三方声明");
-            notices.Width = 104;
+            notices.Width = 96;
             notices.Click += (s, e) => OpenLocal(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "THIRD-PARTY-NOTICES.txt"));
             var folder = UiKit.SecondaryButton("程序目录");
-            folder.Width = 88;
+            folder.Width = 78;
             folder.Click += (s, e) => OpenFolder(AppDomain.CurrentDomain.BaseDirectory);
             var copy = UiKit.SecondaryButton("复制版本");
-            copy.Width = 90;
+            copy.Width = 78;
             copy.Click += (s, e) => CopyVersionInfo();
+            buttons.Controls.Add(update);
             buttons.Controls.Add(notices);
             buttons.Controls.Add(folder);
             buttons.Controls.Add(copy);
@@ -225,7 +229,7 @@ AppInfo.Copyright + "\r\n" +
 "六、商标声明\r\n" +
 "本软件为独立开发，与任何打印机厂商均无隶属、代理、赞助或背书关系。文中提及的产品名称、型号、指令集名称（如 ZPL）与商标，均为其各自权利人的商标或注册商标，仅以描述性方式用于说明兼容性。\r\n\r\n" +
 "七、数据与隐私\r\n" +
-"本软件不含联网上报、遥测或统计功能，标签内容与导入的表格数据只在本机处理；使用网络 9100 直连打印时，ZPL 数据仅发送至您指定的打印机地址。\r\n" +
+"本软件不含遥测、埋点或使用统计，标签内容与导入的表格数据只在本机处理。仅当您点击“检查更新”或启用启动自动检查时，程序才会访问更新地址获取版本信息与更新包；该地址默认为项目发布页，也可改为贵单位自建的更新源。使用网络 9100 直连打印时，ZPL 数据仅发送至您指定的打印机地址。\r\n" +
 "运行日志只记录时间、打印机、份数与错误摘要，不记录标签正文。\r\n" +
 "当前数据目录：" + AppSettings.DataDirectory + "\r\n\r\n" +
 "八、许可变更\r\n" +

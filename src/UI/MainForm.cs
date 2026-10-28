@@ -85,6 +85,9 @@ namespace EasyLabel.UI
                 if (_importDemo) ShowImportDemo();
                 Logger.Info("程序启动，DPI=" + DeviceDpi + "，界面缩放=" + Theme.Scale.ToString("0.##") +
                             "，窗口=" + Width + "x" + Height);
+                // 上次在线更新留下的 .old 备份与旧临时包，趁启动清掉。
+                UpdateService.CleanupAfterUpdate();
+                StartBackgroundUpdateCheck();
             };
             FormClosing += (s, e) =>
             {
@@ -179,10 +182,24 @@ namespace EasyLabel.UI
                 navHost.Controls.Add(b);
             }
 
-            var version = Theme.Label("v" + AppInfo.Version + " · 绿色版", 8.2f, Theme.Muted);
-            version.Dock = DockStyle.Bottom;
-            version.TextAlign = ContentAlignment.MiddleCenter;
-            version.Height = 30;
+            // 左下角版本号兼作“检查更新”入口：常驻可见，不额外占导航栏位置。
+            var version = new Button
+            {
+                Text = "v" + AppInfo.Version + " · " + EditionText(),
+                Dock = DockStyle.Bottom,
+                Height = 30,
+                FlatStyle = FlatStyle.Flat,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = Theme.Ui(8.2f),
+                ForeColor = Theme.Muted,
+                BackColor = Color.White,
+                Cursor = Cursors.Hand,
+                UseVisualStyleBackColor = false
+            };
+            version.FlatAppearance.BorderSize = 0;
+            version.FlatAppearance.MouseOverBackColor = Theme.AccentSoft;
+            version.Click += (s, e) => OpenUpdateDialog();
+            _versionLink = version;
             sidebar.Controls.Add(version);
             sidebar.Controls.Add(navHost);
 

@@ -1,0 +1,9 @@
+{
+  "version": "1.6.0",
+  "releaseDate": "2026-10-28",
+  "url": "https://github.com/yuguod/EasyLabel/releases/download/v1.6.0/EasyLabel-1.6.0-update.zip",
+  "sha256": "7f837502aeb68b218208030f3ef00732b968c71de29ec34df3bed1b61ecd27f5",
+  "size": 1615279,
+  "mandatory": false,
+  "notes": "v1.6.0\n\n· 新增安装版：运行 EasyLabel-1.6.0-Setup.exe 即可安装，自动创建开始菜单/桌面快捷方式，可在“应用和功能”里卸载。默认装到当前用户目录，不需要管理员权限。\n· 新增在线更新：左下角版本号或“关于 → 检查更新”可检查并安装新版本；启动后每天自动检查一次，可关闭。\n· 更新包下载后校验 SHA-256 再替换文件，打印机设置、模版与日志全部保留。\n· 支持自建更新源：打印机设置 → 软件更新 里可改更新地址，适合无外网的内网环境。\n· 绿色版继续提供，解压即用。"
+}

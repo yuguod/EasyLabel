@@ -1,10 +1,12 @@
-# EasyLabel 标签轻松打 v1.5.1
+# EasyLabel 标签轻松打 v1.6.0
 
 Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×20 mm** 和自定义尺寸，单张文本打印、Excel/CSV 批量打印，以及 Code 128 / Code 39 / EAN-13 一维码和 QR 二维码。
 
 程序采用 **ZPL 直发**：把整张标签渲染成 1-bit 点阵，通过 `^GFA` 发送给打印机，不经过 Windows 驱动的页面缩放和重新排版。中文、条码、二维码的预览与实际打印使用同一张位图。
 
-> **直接使用**：不想自己编译的话，到 [Releases](https://github.com/yuguod/EasyLabel/releases) 下载最新版的 `EasyLabel-*-win64.zip`，解压后双击 `EasyLabel.exe` 即可。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#12-从源码构建)）。
+> **直接使用**：到 [Releases](https://github.com/yuguod/EasyLabel/releases) 下载最新版。
+> 推荐 `EasyLabel-1.6.0-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
+> 也可以下载 `EasyLabel-1.6.0-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
 
 ![单张打印](docs/screenshot-single.png)
 
@@ -19,22 +21,94 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
   - 已安装打印机厂商的 ZPL 驱动并创建 Windows 打印队列；
   - 打印机网络可达，使用 IP:9100 直连（无需安装驱动）。
 
-> 程序为绿色免安装版，不需要管理员权限。首次运行若出现 SmartScreen 提示，选择“更多信息 → 仍要运行”。
+> 两种安装方式都不需要管理员权限：安装版默认装到当前用户目录，绿色版解压即用。首次运行若出现 SmartScreen 提示，选择“更多信息 → 仍要运行”。
 
 ---
 
-## 2. 文件说明
+## 2. 安装版与在线更新
+
+### 安装版
+
+运行 `EasyLabel-1.6.0-Setup.exe`：
+
+1. 安装目录默认 `%LOCALAPPDATA%\Programs\EasyLabel`（当前用户，不需要管理员权限）。也可以改成任意目录；填 `C:\Program Files\...` 时安装程序会自动请求管理员权限，并改为“所有用户”安装（注册表写 HKLM、快捷方式放进公共开始菜单）。
+2. 可选“创建桌面快捷方式”“安装完成后启动”。
+3. 安装完成后：
+   - 开始菜单出现 **EasyLabel 标签轻松打** 与 **卸载 EasyLabel**；
+   - “设置 → 应用 → 已安装的应用”里能看到并卸载；
+   - 设置、日志、模版存放在 `%APPDATA%\EasyLabel`，与程序目录分开，卸载时默认保留。
+
+无人值守部署（IT 批量装）：
+
+```bat
+EasyLabel-1.6.0-Setup.exe /S /D="D:\Tools\EasyLabel"
+EasyLabel-1.6.0-Setup.exe /uninstall /S
+```
+
+`/S` 静默安装（默认目录）、`/D=` 指定目录、`/uninstall` 卸载；静默卸载会结束正在运行的程序并保留用户设置。
+
+### 在线更新
+
+三种入口，效果相同：
+
+- 点左侧栏底部的版本号（`v1.6.0 · 安装版`）；
+- “关于 → 检查更新”；
+- 启动时自动检查（默认开启，每天最多一次，可在“打印机设置 → 软件更新”关闭）。
+
+流程：读取更新清单 → 比较版本 → 下载更新包 → **校验 SHA-256** → 解压 → 由 `EasyLabelUpdater.exe` 等主程序退出后替换文件并重启。打印机设置、模版、日志都不受影响。
+
+发现新版本时界面如下：
+
+![在线更新](docs/screenshot-update.png)
+
+### 自建更新源（内网）
+
+默认清单地址是仓库根目录的 `update.json`（raw.githubusercontent.com）。内网无法访问外网时，把 `update.json` 和更新包放到内部 Web 服务器，然后在“打印机设置 → 软件更新”把“更新地址”改成清单 URL 即可；留空恢复默认。
+
+清单格式（`build.ps1` 会自动生成一份到 `dist/update.json`）：
+
+```json
+{
+  "version": "1.6.0",
+  "releaseDate": "2026-10-28",
+  "url": "https://example.com/easylabel/EasyLabel-1.6.0-update.zip",
+  "sha256": "（更新包的 SHA-256，小写；留空则跳过校验）",
+  "size": 1234567,
+  "mandatory": false,
+  "notes": "更新说明，支持 \n 换行"
+}
+```
+
+也支持直接指向 GitHub Releases API（`.../releases/latest`）：程序会自动读取 `tag_name`、`body`，并优先选择文件名带 `update` 的 zip。
+
+### 更新包与版本包的区别
+
+| 文件 | 用途 | 是否含 `portable.flag` |
+|---|---|---|
+| `EasyLabel-<版本>-Setup.exe` | 安装版（内嵌更新包） | — |
+| `EasyLabel-<版本>-win64.zip` | 绿色版 | 是 |
+| `EasyLabel-<版本>-update.zip` | 在线更新（安装版与绿色版共用） | 否 |
+
+更新包故意不带 `portable.flag`：否则安装版更新一次就“变回”绿色版，把设置写到程序目录里。
+
+---
+
+## 3. 文件说明
 
 ```text
 EasyLabel.exe               主程序（依赖已内嵌）
 EasyLabel.exe.config        .NET Framework 4.8 启动配置
-portable.flag               便携模式标记：设置/日志保存在 data 目录
+EasyLabelUpdater.exe        在线更新的替换程序（主程序退出后覆盖文件并重启）
+Uninstall.exe               卸载程序（仅安装版有，就是安装程序的一份副本）
+portable.flag               便携模式标记：设置/日志保存在 data 目录（仅绿色版有）
 samples/                    示例 Excel、CSV、ZPL、预览图
 docs/                       界面截图
 README.md                   本说明
 THIRD-PARTY-NOTICES.txt     开源组件说明
 LICENSES/                   开源许可证全文
 ```
+
+`EasyLabelUpdater.exe` 是必需的：Windows 不允许正在运行的 exe 覆盖自己，更新必须由一个独立进程在退出后接手。删掉它也能用，程序会退化为“改名旧 exe 再写入”的方式，但成功率受文件占用影响。
 
 ### 便携模式
 
@@ -49,7 +123,7 @@ LICENSES/                   开源许可证全文
 
 ---
 
-## 3. 快速开始
+## 4. 快速开始
 
 1. 双击 `EasyLabel.exe`。
 2. 打开“打印机设置”：
@@ -63,7 +137,7 @@ LICENSES/                   开源许可证全文
 
 ---
 
-## 4. 单张打印
+## 5. 单张打印
 
 - **标签文字**：支持多行，自动换行；可用“文字大小（mm）”指定字号。
 - **一维码**：
@@ -115,7 +189,7 @@ LICENSES/                   开源许可证全文
 
 ---
 
-## 5. 模版（保存 / 打开）
+## 6. 模版（保存 / 打开）
 
 做好的标签花样（规格、版式、字体、边距、布局编辑后的位置、文字/条码内容）可以整份存成模版，下次一键调出，不用再逐个调参数。
 
@@ -156,7 +230,7 @@ LICENSES/                   开源许可证全文
 
 ---
 
-## 6. Excel / CSV 批量打印
+## 7. Excel / CSV 批量打印
 
 1. 打开“批量打印”，点击“导入 Excel/CSV”。
 2. 选择 `.xlsx`、`.xls`、`.xlsm` 或 `.csv`。
@@ -185,7 +259,7 @@ LICENSES/                   开源许可证全文
 
 ---
 
-## 7. 条码/二维码规则
+## 8. 条码/二维码规则
 
 - 一维码不支持中文/全角字符；中文请使用二维码或纯文本。
 - 40×15 标签空间很小：
@@ -196,7 +270,7 @@ LICENSES/                   开源许可证全文
 
 ---
 
-## 8. 打印机设置与校准
+## 9. 打印机设置与校准
 
 ### DPI
 
@@ -235,7 +309,7 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 
 ---
 
-## 9. 保存 ZPL / 离线排查
+## 10. 保存 ZPL / 离线排查
 
 - 单张/批量页面都有“保存 ZPL”。保存的文件是 ASCII ZPL，可直接发送给打印机，或用 Labelary 等 ZPL 预览工具检查。
 - 如果打印队列不可用，可先保存 ZPL，再通过其他 ZPL 工具或网络 9100 发送。
@@ -243,7 +317,7 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 
 ---
 
-## 10. 常见问题
+## 11. 常见问题
 
 **点击打印报“无法打开打印机”**
 
@@ -285,9 +359,10 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 
 ---
 
-## 11. 数据与隐私
+## 12. 数据与隐私
 
-- 不含联网上报、遥测或统计功能；标签内容与导入的表格数据只在本机处理。
+- 不含遥测、埋点或使用统计；标签内容与导入的表格数据只在本机处理。
+- 检查更新时会向更新地址请求 `update.json`（只有版本号、包大小等发布信息），下载更新包时同样只访问该地址。除此之外程序不发起任何网络请求。
 - 使用“网络 9100”直连打印时，ZPL 数据仅发送到您指定的打印机地址。
 - 日志只记录启动、打印机、标签数量、错误信息，不记录标签正文。
 - 设置与日志位置见“便携模式”一节。
@@ -295,7 +370,7 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 
 ---
 
-## 12. 从源码构建
+## 13. 从源码构建
 
 环境：
 
@@ -313,8 +388,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 输出：
 
 - `dist/EasyLabel/EasyLabel.exe`（单文件，依赖已内嵌）
-- `dist/EasyLabel-1.5.1-win64.zip`
-- 构建脚本会把应用包同步归档到 `releases/`；源码包也放入 `releases/`，以后每个版本都保留，不覆盖旧包。
+- `dist/EasyLabel/EasyLabelUpdater.exe`（在线更新的替换程序）
+- `dist/EasyLabel-1.6.0-win64.zip`（绿色版）
+- `dist/EasyLabel-1.6.0-update.zip`（在线更新包）
+- `dist/EasyLabel-1.6.0-Setup.exe`（安装版，更新包已内嵌）
+- `dist/update.json`（更新清单，含 SHA-256 与包大小）
+- 构建脚本会把上述产物同步归档到 `releases/`，以后每个版本都保留，不覆盖旧包。
+
+版本号只在 `src/AssemblyInfo.cs` 里维护，包名、安装程序标题、更新清单都由脚本读取，不需要改多地。想另存一份产物（例如当前目录里的程序正在运行）可以指定输出目录：
+
+```powershell
+.\build.ps1 -OutDir dist\verify
+```
+
+发布新版本时的顺序：
+
+1. 改 `src/AssemblyInfo.cs` 的版本号、更新 `update.json` 里的 `notes` 与 `releaseDate`；
+2. 跑 `build.ps1`，把 `releases/` 里的 4 个文件（Setup.exe、win64.zip、update.zip、update.json）上传到 GitHub Releases（tag 形如 `v1.6.0`）；
+3. 把 `dist/update.json` 提交到仓库根目录并推送——客户端默认从这里取清单。
 
 测试：
 
@@ -322,11 +413,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 .\tests\TestRunner.exe
 ```
 
-测试包括：点阵尺寸、一维码/QR 回读、40×15/30×25/30×20 渲染、自定义尺寸、四边距、字体、**加粗**、**自定义元素布局**、**模版保存/读取/重命名/删除/导入导出**、**ZPL 模版往返与外部 .zpl 直发**、Excel/CSV 导入、ZPL 结构，以及 Labelary 预览验证。
+测试包括：点阵尺寸、一维码/QR 回读、40×15/30×25/30×20 渲染、自定义尺寸、四边距、字体、**加粗**、**自定义元素布局**、**模版保存/读取/重命名/删除/导入导出**、**ZPL 模版往返与外部 .zpl 直发**、Excel/CSV 导入、ZPL 结构、**更新清单解析与版本比较**，以及 Labelary 预览验证。
+
 
 ---
 
-## 13. 第三方组件与许可
+## 14. 第三方组件与许可
 
 - **ZXing.Net 0.16.11** — Apache License 2.0，一维码/QR 生成与识读，版权归 ZXing.Net authors 所有。
 - **ExcelDataReader 3.9.0** — MIT License，读取 `.xls` / `.xlsx`，版权归 ExcelDataReader contributors 所有。
@@ -335,7 +427,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 
 ---
 
-## 14. 版权
+## 15. 版权
 
 Copyright © 2026 yuguod. 保留所有权利。
 
@@ -354,8 +446,9 @@ Copyright © 2026 yuguod. 保留所有权利。
 
 ---
 
-## 15. 版本
+## 16. 版本
 
+**v1.6.0** — 新增 **安装版与在线更新**：`EasyLabel-1.6.0-Setup.exe` 单文件安装（默认装到当前用户目录、免管理员，自动创建开始菜单/桌面快捷方式并注册“应用和功能”卸载项，支持 `/S`、`/D=`、`/uninstall` 无人值守）；程序内新增“软件更新”：左侧栏版本号、“关于 → 检查更新”或启动时自动检查（每天一次，可关），下载后校验 **SHA-256**，由 `EasyLabelUpdater.exe` 在主程序退出后替换文件并重启，设置/模版/日志不受影响；支持把更新源指到内网自建地址。打包新增 `update.zip`（不含 `portable.flag`）与 `update.json`。  
 **v1.5.1** — 版权页改为“关于”：著作权人改为作者 `yuguod`，新增可点击的项目地址，移除“打印方式/数据目录”两行；许可条款重写（明确著作权自动产生与法律依据、法定例外、不可排除的责任、第三方组件的 Apache-2.0 第 4 条履行说明），仓库补 `LICENSE` 全文。  
 **v1.5.0** — 模版支持 **ZPL 格式文件**：新增“将当前页面保存为 ZPL 模版…”，生成的 `.zpl` 既能直接发给打印机，也在 `^FX` 注释里带上版式信息，可再打开继续编辑；模版库同时列出 `.elbl` 与 `.zpl`（新增“类型”列），外部 `.zpl` 显示指令内容与点数尺寸并支持一键直发、导入、导出、改名。  
 **v1.4.0** — 新增 **模版功能**：页头“模版”菜单可把当前规格、版式、字体、边距、自定义布局和示例内容保存为模版（`.elbl`），下次一键打开；模版库支持预览、重命名、删除、导入/导出文件，批量页打开模版只套版式不动数据。同时修复 200% 缩放下页头“模版/打印机设置”和状态栏右侧文字被挤出窗口的问题。  

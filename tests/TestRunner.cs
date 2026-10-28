@@ -42,6 +42,7 @@ internal static class TestRunner
         TestTestPage();
         TestValidation();
         TestFontSize();
+        TestUpdates();
         TestLabelary();
 
         Console.WriteLine();
@@ -1013,6 +1014,56 @@ internal static class TestRunner
         ValidationResult tooLarge = LabelRenderer.Validate(LabelSpec.Label40x15, barcodeContent,
             new RenderOptions { Dpi = 203, LayoutMode = LayoutMode.TextBarcode, FontSizeMm = 6.0 });
         Check(tooLarge.Warnings.Any(w => w.Contains("自动缩小")), "font capped warning", tooLarge.WarningText);
+    }
+
+    private static void TestUpdates()
+    {
+        Check(UpdateService.CompareVersions("1.6.0", "1.5.1") > 0, "更新：1.6.0 比 1.5.1 新", "");
+        Check(UpdateService.CompareVersions("v1.6.0", "1.6.0") == 0, "更新：v 前缀不影响比较", "");
+        Check(UpdateService.CompareVersions("1.6", "1.6.0") == 0, "更新：1.6 与 1.6.0 等价", "");
+        Check(UpdateService.CompareVersions("1.10.0", "1.9.9") > 0, "更新：按数字段比较而非字符串", "");
+        Check(UpdateService.CompareVersions("1.6.0-beta", "1.6.0") < 0, "更新：预发布版低于正式版", "");
+        Check(UpdateService.CompareVersions("1.5.1", "1.6.0") < 0, "更新：旧版本判定为不更新", "");
+
+        const string manifest = @"{
+  ""version"": ""1.6.0"",
+  ""releaseDate"": ""2026-10-28"",
+  ""url"": ""https://example.com/EasyLabel-1.6.0-update.zip"",
+  ""sha256"": ""ABCDEF0123"",
+  ""size"": 12345678,
+  ""notes"": ""第一行\n第二行""
+}";
+        string error;
+        UpdateInfo info = UpdateService.ParseManifest(manifest, out error);
+        Check(info != null, "更新：解析自建 update.json", error ?? "");
+        Check(info != null && info.Version == "1.6.0", "更新：清单版本号", info == null ? "" : info.Version);
+        Check(info != null && info.Size == 12345678, "更新：清单包大小", info == null ? "" : info.Size.ToString());
+        Check(info != null && info.Sha256 == "ABCDEF0123", "更新：清单校验值", info == null ? "" : info.Sha256);
+        Check(info != null && info.Notes.Contains("第二行"), "更新：清单更新说明", "");
+
+        const string github = @"{
+  ""tag_name"": ""v2.0.0"",
+  ""body"": ""GitHub 发布说明"",
+  ""published_at"": ""2026-12-01T08:00:00Z"",
+  ""assets"": [
+    { ""name"": ""EasyLabel-2.0.0-win64.zip"", ""browser_download_url"": ""https://example.com/portable.zip"", ""size"": 100 },
+    { ""name"": ""EasyLabel-2.0.0-update.zip"", ""browser_download_url"": ""https://example.com/update.zip"", ""size"": 90 }
+  ]
+}";
+        UpdateInfo release = UpdateService.ParseManifest(github, out error);
+        Check(release != null && release.Version == "2.0.0", "更新：解析 GitHub Releases",
+            release == null ? error : release.Version);
+        Check(release != null && release.DownloadUrl.EndsWith("update.zip"),
+            "更新：GitHub 优先选 update 包", release == null ? "" : release.DownloadUrl);
+
+        UpdateInfo broken = UpdateService.ParseManifest("not a json", out error);
+        Check(broken == null && !string.IsNullOrEmpty(error), "更新：非法清单被拒绝", error);
+        UpdateInfo empty = UpdateService.ParseManifest("{\"notes\":\"no version\"}", out error);
+        Check(empty == null && !string.IsNullOrEmpty(error), "更新：缺版本号的清单被拒绝", error);
+
+        Check(UpdateService.ResolveFeedUrl("") == UpdateService.DefaultFeedUrl, "更新：空地址回落到默认清单", "");
+        Check(UpdateService.ResolveFeedUrl(" http://intranet/update.json ") == "http://intranet/update.json",
+            "更新：自定义地址去空格", "");
     }
 
     private static void TestLabelary()
