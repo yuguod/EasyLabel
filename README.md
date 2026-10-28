@@ -4,6 +4,8 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 
 程序采用 **ZPL 直发**：把整张标签渲染成 1-bit 点阵，通过 `^GFA` 发送给打印机，不经过 Windows 驱动的页面缩放和重新排版。中文、条码、二维码的预览与实际打印使用同一张位图。
 
+> **直接使用**：不想自己编译的话，到 [Releases](https://github.com/yuguod/EasyLabel/releases) 下载 `EasyLabel-1.5.0-win64.zip`，解压后双击 `EasyLabel.exe` 即可。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#12-从源码构建)）。
+
 ![单张打印](docs/screenshot-single.png)
 
 ---
