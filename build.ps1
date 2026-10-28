@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Tests
 )
 
@@ -14,11 +14,11 @@ $appDir = Join-Path $dist 'EasyLabel'
 $coreDll = Join-Path $dist 'EasyLabel.Core.dll'
 
 if (Test-Path $appDir) {
-    $resolved = [IO.Path]::GetFullPath($appDir)
-    if (!$resolved.StartsWith([IO.Path]::GetFullPath($root), [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to remove outside project: $resolved"
-    }
-    Remove-Item $appDir -Recurse -Force
+    # 原地重建：不删除旧输出目录，构建时直接覆盖同名文件。
+    # 原因：受限环境（如 WorkBuddy 沙箱）会拦截几十个文件的递归删除与目录改名，
+    # 而 dist 目录本就是可再生的中间产物。需要一份全新的输出时，手动删除
+    # dist\EasyLabel 后重新运行本脚本即可。
+    Write-Host "复用已有输出目录：$appDir（原地覆盖）"
 }
 New-Item -ItemType Directory -Force -Path $dist, $appDir | Out-Null
 
@@ -60,6 +60,7 @@ Set-Content -Path (Join-Path $appDir 'portable.flag') -Value 'portable' -Encodin
 New-Item -ItemType Directory -Force -Path (Join-Path $appDir 'samples') | Out-Null
 Copy-Item (Join-Path $root 'samples\*') (Join-Path $appDir 'samples') -Recurse -Force
 Copy-Item (Join-Path $root 'README.md') $appDir -Force
+Copy-Item (Join-Path $root 'LICENSE') $appDir -Force
 Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $appDir -Force
 if (Test-Path (Join-Path $root 'LICENSES')) {
     Copy-Item (Join-Path $root 'LICENSES') $appDir -Recurse -Force
@@ -83,10 +84,36 @@ if ($Tests) {
     if ($LASTEXITCODE -ne 0) { throw 'Test build failed' }
 }
 
-$zip = Join-Path $dist 'EasyLabel-1.5.0-win64.zip'
+$zip = Join-Path $dist 'EasyLabel-1.5.1-win64.zip'
 if (Test-Path $zip) { Remove-Item $zip -Force }
+
+# 便携模式下运行程序会在输出目录生成 data（设置与日志）。打包必须排除，
+# 否则会把本机的打印机名、路径和日志带进发布包。
+$dataDir = Join-Path $appDir 'data'
+if (Test-Path $dataDir) {
+    try {
+        Remove-Item $dataDir -Recurse -Force -ErrorAction Stop
+        Write-Host '打包前已排除运行期数据目录 data'
+    }
+    catch {
+        Write-Warning "无法删除 $dataDir（程序可能正在运行），请手动清理后重新打包"
+    }
+}
+
 Write-Host 'Package...'
-Compress-Archive -Path (Join-Path $appDir '*') -DestinationPath $zip -CompressionLevel Optimal
+# 显式列出发布包内容，避免把构建残留（如 {guid}_EasyLabel.exe）或运行期数据带进包。
+$packageItems = @(
+    (Join-Path $appDir 'EasyLabel.exe'),
+    (Join-Path $appDir 'EasyLabel.exe.config'),
+    (Join-Path $appDir 'portable.flag'),
+    (Join-Path $appDir 'LICENSE'),
+    (Join-Path $appDir 'README.md'),
+    (Join-Path $appDir 'THIRD-PARTY-NOTICES.txt'),
+    (Join-Path $appDir 'LICENSES'),
+    (Join-Path $appDir 'docs'),
+    (Join-Path $appDir 'samples')
+) | Where-Object { Test-Path $_ }
+Compress-Archive -Path $packageItems -DestinationPath $zip -CompressionLevel Optimal
 $releases = Join-Path $root 'releases'
 New-Item -ItemType Directory -Force -Path $releases | Out-Null
 Copy-Item $zip (Join-Path $releases (Split-Path $zip -Leaf)) -Force

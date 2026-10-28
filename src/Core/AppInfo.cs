@@ -12,13 +12,16 @@ namespace EasyLabel.Core
         public const string ProductName = "EasyLabel 标签轻松打";
         public const string ShortName = "EasyLabel";
         public const string Tagline = "标签打印 · ZPL 直发 · 203 / 300 / 600 dpi · 40×15 / 30×25 / 30×20 / 自定义";
-        public const string Copyright = "Copyright © 2026 EasyLabel. 保留所有权利。";
-        public const string CopyrightHolder = "EasyLabel";
+
+        /// <summary>著作权人。署名用账号名，若要强化权利主张可改为真实姓名。</summary>
+        public const string Author = "yuguod";
+        public const string ProjectUrl = "https://github.com/yuguod/EasyLabel";
+        public const string Copyright = "Copyright © 2026 " + Author + ". 保留所有权利。";
         public const string ReleaseDate = "2026 年 10 月";
 
         private static string _version;
 
-        /// <summary>形如 1.5.0；取入口程序集版本，取不到时退回 1.0.0。</summary>
+        /// <summary>形如 1.5.1；取入口程序集版本，取不到时退回 1.0.0。</summary>
         public static string Version
         {
             get

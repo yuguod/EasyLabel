@@ -135,17 +135,19 @@ namespace EasyLabel.UI
    · 本程序把中文栅格化后发送，正常不会依赖打印机字体；如仍异常，请确认使用的是本程序生成的 ZPL，而不是驱动重新排版。
 
 九、数据与隐私
-· 所有标签内容只在本机处理，不上传网络。
+· 不含联网上报、遥测或统计功能；标签内容与导入的表格数据只在本机处理。
+· 使用“网络 9100”直连打印时，ZPL 数据仅发送到您指定的打印机地址。
 · 日志只记录时间、打印机、标签数量和错误信息，不记录标签正文。
 · 设置保存在：" + AppSettings.SettingsPath + @"
 
 十、开源组件
-· ZXing.Net（Apache-2.0）：一维码/QR 生成与识读。
-· ExcelDataReader（MIT）：读取 .xls/.xlsx。
-详细许可见程序目录下的 THIRD-PARTY-NOTICES.txt，或“关于与版权”页。
+· ZXing.Net 0.16.11（Apache-2.0）：一维码/QR 生成与识读。
+· ExcelDataReader 3.9.0（MIT）：读取 .xls/.xlsx。
+详细许可见程序目录下的 THIRD-PARTY-NOTICES.txt，或程序内“关于”页。
 
 十一、版权
 " + AppInfo.Copyright + @"
+作者：yuguod    项目地址：https://github.com/yuguod/EasyLabel
 未经授权不得以本程序名义发布修改版本；第三方组件版权归其各自作者所有。";
         }
     }

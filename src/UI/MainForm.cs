@@ -154,7 +154,7 @@ namespace EasyLabel.UI
 
             var navHost = new Panel { Dock = DockStyle.Top, Height = 296, BackColor = Color.White };
             _navButtons = new Button[5];
-            string[] names = { "单张打印", "批量打印", "打印机设置", "使用说明", "关于与版权" };
+            string[] names = { "单张打印", "批量打印", "打印机设置", "使用说明", "关于" };
             for (int i = names.Length - 1; i >= 0; i--)
             {
                 int page = i;

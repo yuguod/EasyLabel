@@ -306,7 +306,7 @@ namespace EasyLabel.UI
                 string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "samples");
                 OpenFolder(Directory.Exists(dir) ? dir : AppDomain.CurrentDomain.BaseDirectory);
             };
-            var about = UiKit.SecondaryButton("关于 / 版权");
+            var about = UiKit.SecondaryButton("关于");
             about.Width = 128;
             about.Click += (s, e) => ShowPage(4);
 
