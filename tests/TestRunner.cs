@@ -1064,6 +1064,52 @@ internal static class TestRunner
         Check(UpdateService.ResolveFeedUrl("") == UpdateService.DefaultFeedUrl, "更新：空地址回落到默认清单", "");
         Check(UpdateService.ResolveFeedUrl(" http://intranet/update.json ") == "http://intranet/update.json",
             "更新：自定义地址去空格", "");
+
+        // 默认地址直接指向 GitHub 的 Release（不再依赖仓库里的 update.json）
+        Check(UpdateService.DefaultFeedUrl.EndsWith("/releases/latest"),
+            "更新：默认地址为 GitHub Release", UpdateService.DefaultFeedUrl);
+
+        // 粘贴 GitHub 页面地址时自动换算成 API
+        Check(UpdateService.ResolveFeedUrl("https://github.com/yuguod/EasyLabel") ==
+              "https://api.github.com/repos/yuguod/EasyLabel/releases/latest",
+            "更新：仓库主页换算为最新 Release", UpdateService.ResolveFeedUrl("https://github.com/yuguod/EasyLabel"));
+        Check(UpdateService.ResolveFeedUrl("https://github.com/yuguod/EasyLabel/releases") ==
+              "https://api.github.com/repos/yuguod/EasyLabel/releases/latest",
+            "更新：发布页换算为最新 Release", UpdateService.ResolveFeedUrl("https://github.com/yuguod/EasyLabel/releases"));
+        Check(UpdateService.ResolveFeedUrl("https://github.com/yuguod/EasyLabel/releases/tag/v1.6.0") ==
+              "https://api.github.com/repos/yuguod/EasyLabel/releases/tags/v1.6.0",
+            "更新：指定 Release 页面换算为对应版本", UpdateService.ResolveFeedUrl("https://github.com/yuguod/EasyLabel/releases/tag/v1.6.0"));
+        Check(UpdateService.ResolveFeedUrl("github.com/yuguod/EasyLabel") ==
+              "https://api.github.com/repos/yuguod/EasyLabel/releases/latest",
+            "更新：省略协议的地址也能识别", UpdateService.ResolveFeedUrl("github.com/yuguod/EasyLabel"));
+        Check(UpdateService.ResolveFeedUrl("https://api.github.com/repos/yuguod/EasyLabel/releases/latest") ==
+              "https://api.github.com/repos/yuguod/EasyLabel/releases/latest",
+            "更新：API 地址原样使用", "");
+        Check(UpdateService.ResolveFeedUrl("https://intranet.local/feed.json") == "https://intranet.local/feed.json",
+            "更新：内网清单原样使用", "");
+
+        // 附件自带 digest 时直接作为校验值，大小取附件大小
+        const string digestRelease = @"{
+  ""tag_name"": ""v3.0.0"",
+  ""body"": ""没有哈希的说明"",
+  ""assets"": [
+    { ""name"": ""EasyLabel-3.0.0-update.zip"", ""browser_download_url"": ""https://example.com/u.zip"",
+      ""size"": 4242,
+      ""digest"": ""sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"" }
+  ]
+}";
+        UpdateInfo digest = UpdateService.ParseManifest(digestRelease, out error);
+        Check(digest != null && digest.Size == 4242, "更新：GitHub 附件大小", digest == null ? "" : digest.Size.ToString());
+        Check(digest != null && digest.Sha256.Length == 64, "更新：GitHub 附件 digest 作为校验值",
+            digest == null ? "" : digest.Sha256);
+
+        // 没有 digest 时从发布说明里取 SHA-256（publish.ps1 会把哈希写进正文）
+        const string bodyHash = @"{ ""tag_name"": ""v3.1.0"",
+  ""body"": ""说明\n\n`EasyLabel-3.1.0-update.zip` 的 SHA-256：`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`"",
+  ""assets"": [ { ""name"": ""EasyLabel-3.1.0-update.zip"", ""browser_download_url"": ""https://example.com/u.zip"", ""size"": 10 } ] }";
+        UpdateInfo fromBody = UpdateService.ParseManifest(bodyHash, out error);
+        Check(fromBody != null && fromBody.Sha256 == new string('b', 64),
+            "更新：发布说明里的 SHA-256 被采用", fromBody == null ? error : fromBody.Sha256);
     }
 
     private static void TestLabelary()

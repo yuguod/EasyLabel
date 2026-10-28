@@ -61,9 +61,25 @@ EasyLabel-1.6.0-Setup.exe /uninstall /S
 
 ![在线更新](docs/screenshot-update.png)
 
+### 更新地址
+
+默认直接读 **GitHub Releases**（`https://api.github.com/repos/yuguod/EasyLabel/releases/latest`）：版本号取 tag，更新包取附件里的 `EasyLabel-*-update.zip`，校验值优先用附件自带的 digest，没有则从发布说明里的 SHA-256 取。不再依赖仓库里的 `update.json`，`raw.githubusercontent.com` 被墙时也能检查更新。
+
+“打印机设置 → 软件更新”里的地址支持多种写法，程序会自动换算：
+
+| 填写内容 | 实际请求 |
+| --- | --- |
+| 留空 | `api.github.com/repos/yuguod/EasyLabel/releases/latest` |
+| `https://github.com/yuguod/EasyLabel` | 同上（仓库主页） |
+| `https://github.com/yuguod/EasyLabel/releases` | 同上（发布页） |
+| `https://github.com/yuguod/EasyLabel/releases/tag/v1.6.0` | `.../releases/tags/v1.6.0`（指定版本） |
+| 其他 URL（如内网 `http://intranet/update.json`） | 原样请求 |
+
+默认地址失败时会自动再试一次仓库里的 `update.json`（两条链路的可达性不同），仍失败才报错。
+
 ### 自建更新源（内网）
 
-默认清单地址是仓库根目录的 `update.json`（raw.githubusercontent.com）。内网无法访问外网时，把 `update.json` 和更新包放到内部 Web 服务器，然后在“打印机设置 → 软件更新”把“更新地址”改成清单 URL 即可；留空恢复默认。
+内网无法访问外网时，把 `update.json` 和更新包放到内部 Web 服务器，然后在“打印机设置 → 软件更新”把“更新地址”改成清单 URL 即可；留空恢复默认。
 
 清单格式（`build.ps1` 会自动生成一份到 `dist/update.json`）：
 
@@ -79,7 +95,21 @@ EasyLabel-1.6.0-Setup.exe /uninstall /S
 }
 ```
 
-也支持直接指向 GitHub Releases API（`.../releases/latest`）：程序会自动读取 `tag_name`、`body`，并优先选择文件名带 `update` 的 zip。
+也支持直接指向 GitHub Releases API（`.../releases/latest` 或 `.../releases/tags/vX`）：程序会自动读取 `tag_name`、`body`、附件大小与 digest，并优先选择文件名带 `update` 的 zip。
+
+### 安装界面
+
+安装程序和卸载程序用同一套 WinForms 自绘界面（`installer/Setup.cs`）：
+
+- 顶部品牌区 + 版本号，主体是卡片式表单，底部固定按钮区；
+- 进度条按“解压文件 → 写卸载程序 → 建快捷方式 → 注册卸载项”分阶段推进，不再是无限滚动的跑马灯；
+- 安装完成后原地切换为“完成”状态（绿色进度条 + 完成按钮），勾选“安装完成后启动”时在关闭窗口后启动；
+- 卸载是独立窗口，用勾选框决定是否保留设置与模版，替代原来的“是/否/取消”三选一弹窗；
+- 布局全部走 `TableLayoutPanel` 与 DPI 换算（`Ui.S()`），窗体固定 `AutoScaleMode.None`，200% 缩放下不再重叠或被裁切。
+
+![安装程序](docs/screenshot-setup.png)
+
+![卸载程序](docs/screenshot-uninstall.png)
 
 ### 更新包与版本包的区别
 
@@ -362,7 +392,7 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 ## 12. 数据与隐私
 
 - 不含遥测、埋点或使用统计；标签内容与导入的表格数据只在本机处理。
-- 检查更新时会向更新地址请求 `update.json`（只有版本号、包大小等发布信息），下载更新包时同样只访问该地址。除此之外程序不发起任何网络请求。
+- 检查更新时会向更新地址请求发布信息（版本号、包大小、校验值），下载更新包时同样只访问该地址。除此之外程序不发起任何网络请求。
 - 使用“网络 9100”直连打印时，ZPL 数据仅发送到您指定的打印机地址。
 - 日志只记录启动、打印机、标签数量、错误信息，不记录标签正文。
 - 设置与日志位置见“便携模式”一节。
@@ -477,6 +507,7 @@ Copyright © 2026 yuguod. 保留所有权利。
 
 ## 16. 版本
 
+**v1.6.1** — 更新地址改为 **GitHub Release 发布页**：默认直接读 `releases/latest`（版本号取 tag、更新包取附件、校验值优先用附件 digest），不再依赖 `raw.githubusercontent.com`；更新地址可直接粘贴仓库主页、发布页或某个 Release 页面，程序自动换算成对应 API；默认地址不可用时自动改用仓库里的 `update.json` 再试一次。**安装程序界面重做**：卡片式布局、分阶段进度条与“完成”状态、卸载独立窗口用勾选框决定是否保留设置与模版，并修掉 200% 缩放下文字重叠、被裁切的问题。  
 **v1.6.0** — 新增 **安装版与在线更新**：`EasyLabel-1.6.0-Setup.exe` 单文件安装（默认装到当前用户目录、免管理员，自动创建开始菜单/桌面快捷方式并注册“应用和功能”卸载项，支持 `/S`、`/D=`、`/uninstall` 无人值守）；程序内新增“软件更新”：左侧栏版本号、“关于 → 检查更新”或启动时自动检查（每天一次，可关），下载后校验 **SHA-256**，由 `EasyLabelUpdater.exe` 在主程序退出后替换文件并重启，设置/模版/日志不受影响；支持把更新源指到内网自建地址。打包新增 `update.zip`（不含 `portable.flag`）与 `update.json`。  
 **v1.5.1** — 版权页改为“关于”：著作权人改为作者 `yuguod`，新增可点击的项目地址，移除“打印方式/数据目录”两行；许可条款重写（明确著作权自动产生与法律依据、法定例外、不可排除的责任、第三方组件的 Apache-2.0 第 4 条履行说明），仓库补 `LICENSE` 全文。  
 **v1.5.0** — 模版支持 **ZPL 格式文件**：新增“将当前页面保存为 ZPL 模版…”，生成的 `.zpl` 既能直接发给打印机，也在 `^FX` 注释里带上版式信息，可再打开继续编辑；模版库同时列出 `.elbl` 与 `.zpl`（新增“类型”列），外部 `.zpl` 显示指令内容与点数尺寸并支持一键直发、导入、导出、改名。  

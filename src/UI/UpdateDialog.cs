@@ -186,7 +186,7 @@ namespace EasyLabel.UI
             _notes.Text = "";
 
             string feed = UpdateService.ResolveFeedUrl(_settings.UpdateFeedUrl);
-            UpdateCheckResult check = await Task.Run(() => UpdateService.Check(feed));
+            UpdateCheckResult check = await Task.Run(() => UpdateService.Check(_settings.UpdateFeedUrl));
 
             _busy = false;
             _settings.LastUpdateCheck = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
@@ -196,15 +196,20 @@ namespace EasyLabel.UI
             {
                 _info = null;
                 SetStatus("检查更新失败", Theme.Error);
-                SetDetail((check.Error ?? "") + "\r\n可在“打印机设置 → 软件更新”里更换更新地址，或稍后再试。");
-                _notes.Text = "检查更新只读取版本信息，不上传任何数据。\r\n" +
-                              "若公司网络屏蔽了外部地址，可把 update.json 与更新包放到内网服务器，" +
-                              "再把更新地址改成内网 URL。";
+                SetDetail(check.Error ?? "");
+                _notes.Text = "检查更新只读取版本信息，不上传任何数据。\r\n\r\n" +
+                              "默认地址是项目发布页（" + UpdateService.ReleasesUrl + "）。\r\n" +
+                              "也可以在“打印机设置 → 软件更新”里填仓库主页、" +
+                              "Release 页面，或内网自建的 update.json 地址。";
                 return;
             }
 
             UpdateInfo info = check.Info;
             _info = info;
+            if (check.UsedFallback)
+            {
+                SetDetail("更新地址：" + feed + "（不可用，已改用备用清单）");
+            }
             if (info.IsNewer())
             {
                 SetStatus("发现新版本 " + info.DisplayVersion(), Theme.Success);

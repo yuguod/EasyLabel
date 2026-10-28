@@ -316,8 +316,8 @@ namespace EasyLabel.UI
             UiKit.AddRow(table, 1, "更新地址", _updateFeed, false, true);
 
             var hint = Theme.Label(
-                "留空使用默认地址：" + UpdateService.DefaultFeedUrl + "\r\n" +
-                "企业内网可把 update.json 与更新包放在内部服务器，这里填对应的清单地址。",
+                "留空即用默认地址：项目 Release 发布页（" + UpdateService.ReleasesUrl + "）。\r\n" +
+                "也可以直接填仓库主页、某个 Release 页面，或内网自建的 update.json 地址。",
                 8.3f, Theme.Muted);
             hint.AutoSize = false;
             hint.Dock = DockStyle.Fill;
@@ -338,15 +338,19 @@ namespace EasyLabel.UI
             check.Margin = new Padding(0, 3, 8, 0);
             check.Click += (s, e) => OpenUpdateDialog();
             var reset = UiKit.LinkButton("恢复默认地址");
-            reset.Margin = new Padding(0, 8, 0, 0);
+            reset.Margin = new Padding(0, 8, 12, 0);
             reset.Click += (s, e) =>
             {
                 _updateFeed.Text = "";
                 _settings.UpdateFeedUrl = "";
                 SetStatus("更新地址已恢复为默认", false, false);
             };
+            var releases = UiKit.LinkButton("打开发布页");
+            releases.Margin = new Padding(0, 8, 0, 0);
+            releases.Click += (s, e) => OpenUrl(UpdateService.ReleasesUrl);
             row.Controls.Add(check);
             row.Controls.Add(reset);
+            row.Controls.Add(releases);
             table.Controls.Add(row, 0, 3);
             table.SetColumnSpan(row, 2);
 

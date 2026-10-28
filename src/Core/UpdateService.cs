@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -41,6 +42,8 @@ namespace EasyLabel.Core
     {
         public UpdateInfo Info;
         public string Error;
+        /// <summary>默认地址不可用、改用备用清单时置位，界面可据此提示。</summary>
+        public bool UsedFallback;
         public bool Success { get { return Info != null; } }
     }
 
@@ -67,8 +70,28 @@ namespace EasyLabel.Core
     /// </summary>
     public static class UpdateService
     {
-        /// <summary>默认发布清单地址。企业内网可在“打印机设置 → 软件更新”里改成自建地址。</summary>
-        public const string DefaultFeedUrl = "https://raw.githubusercontent.com/yuguod/EasyLabel/main/update.json";
+        /// <summary>项目主页；安装程序与“关于”页共用同一处地址。</summary>
+        public const string RepositoryUrl = "https://github.com/yuguod/EasyLabel";
+
+        /// <summary>项目发布页（给人看的地址）。</summary>
+        public const string ReleasesUrl = RepositoryUrl + "/releases";
+
+        /// <summary>
+        /// 默认更新地址：GitHub Releases API 的 latest。
+        /// 直接读发布本身（版本号 = tag，更新包 = 附件），不再依赖仓库里的 update.json，
+        /// 避免 raw.githubusercontent.com 被墙时检查更新直接失败。
+        /// 企业内网可在“打印机设置 → 软件更新”里改成自建清单地址。
+        /// </summary>
+        public const string DefaultFeedUrl = "https://api.github.com/repos/yuguod/EasyLabel/releases/latest";
+
+        /// <summary>默认地址不可用时的备用清单（仅在用户没自定义地址时尝试）。</summary>
+        public const string FallbackFeedUrl = "https://raw.githubusercontent.com/yuguod/EasyLabel/main/update.json";
+
+        private static readonly Regex GitHubPagePattern = new Regex(
+            @"^https?://(?:www\.)?github\.com/(?<owner>[^/]+)/(?<repo>[^/?#]+)(?:/releases(?:/(?:tag|download)/(?<tag>[^/?#]+))?.*)?$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex Sha256Pattern = new Regex(@"\b[0-9a-fA-F]{64}\b", RegexOptions.Compiled);
 
         /// <summary>更新程序文件名，随安装包/绿色包一起分发。</summary>
         public const string UpdaterFileName = "EasyLabelUpdater.exe";
@@ -92,10 +115,53 @@ namespace EasyLabel.Core
             get { return Path.Combine(Path.GetTempPath(), "EasyLabel-update"); }
         }
 
+        /// <summary>
+        /// 把用户填写的地址换成真正要去请求的清单地址。
+        /// 允许直接粘贴 GitHub 页面地址：仓库主页、/releases、/releases/tag/vX、甚至某个附件的下载地址，
+        /// 都会换算成对应的 Releases API；自建 update.json 或其他 URL 原样使用。
+        /// </summary>
         public static string ResolveFeedUrl(string configured)
         {
             string url = (configured ?? "").Trim();
-            return url.Length == 0 ? DefaultFeedUrl : url;
+            if (url.Length == 0) return DefaultFeedUrl;
+
+            // 允许省略协议：github.com/owner/repo
+            if (url.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase) ||
+                url.StartsWith("www.github.com/", StringComparison.OrdinalIgnoreCase))
+            {
+                url = "https://" + url;
+            }
+
+            // 已经是 API 或 raw 清单地址，直接使用
+            if (url.IndexOf("api.github.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf(".json", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return url;
+            }
+
+            Match match = GitHubPagePattern.Match(url);
+            if (match.Success)
+            {
+                string owner = match.Groups["owner"].Value;
+                string repo = match.Groups["repo"].Value;
+                if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+                    repo = repo.Substring(0, repo.Length - 4);
+                string tag = match.Groups["tag"].Value;
+                if (tag.Length > 0 && tag.IndexOf(".zip", StringComparison.OrdinalIgnoreCase) >= 0) tag = "";
+                return tag.Length > 0
+                    ? "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag
+                    : "https://api.github.com/repos/" + owner + "/" + repo + "/releases/latest";
+            }
+
+            return url;
+        }
+
+        /// <summary>地址是不是 GitHub Releases API（决定提示语与校验方式）。</summary>
+        public static bool IsGitHubFeed(string url)
+        {
+            return !string.IsNullOrEmpty(url) &&
+                   url.IndexOf("api.github.com/repos/", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         // ---------------------------------------------------------------- 版本比较
@@ -148,8 +214,28 @@ namespace EasyLabel.Core
         /// <summary>拉取并解析发布清单。</summary>
         public static UpdateCheckResult Check(string feedUrl)
         {
-            var result = new UpdateCheckResult();
             string url = ResolveFeedUrl(feedUrl);
+            UpdateCheckResult result = CheckUrl(url);
+            if (result.Success) return result;
+
+            // 没自定义地址时，默认的 Releases API 走不通就退回仓库里的 update.json：
+            // 国内网络下 api.github.com 与 raw.githubusercontent.com 的可达性经常一好一坏。
+            if (string.IsNullOrWhiteSpace(feedUrl) &&
+                !string.Equals(url, FallbackFeedUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateCheckResult fallback = CheckUrl(FallbackFeedUrl);
+                if (fallback.Success)
+                {
+                    fallback.UsedFallback = true;
+                    return fallback;
+                }
+            }
+            return result;
+        }
+
+        private static UpdateCheckResult CheckUrl(string url)
+        {
+            var result = new UpdateCheckResult();
             string json;
             try
             {
@@ -215,12 +301,18 @@ namespace EasyLabel.Core
                 // GitHub Releases API：/repos/{owner}/{repo}/releases/latest
                 info.Version = CleanVersion(Str(map, "tag_name"));
                 info.Notes = Str(map, "body");
-                info.ReleaseDate = Str(map, "published_at");
-                info.DownloadUrl = PickAsset(map);
-                if (info.DownloadUrl.Length == 0)
+                info.ReleaseDate = ToDateText(Str(map, "published_at"));
+                if (info.ReleaseDate.Length == 0) info.ReleaseDate = ToDateText(Str(map, "created_at"));
+                if (!PickAsset(map, info))
                 {
                     error = "GitHub 发布里没有找到更新包（.zip）。";
                     return null;
+                }
+                // 校验值优先用附件自带的 digest，其次从发布说明里找 64 位十六进制
+                if (info.Sha256.Length == 0)
+                {
+                    Match hash = Sha256Pattern.Match(info.Notes ?? "");
+                    if (hash.Success) info.Sha256 = hash.Value;
                 }
             }
             else
@@ -248,14 +340,15 @@ namespace EasyLabel.Core
             return info;
         }
 
-        private static string PickAsset(Dictionary<string, object> map)
+        /// <summary>从 GitHub 发布里挑出更新包附件，并把地址、大小、校验值填进 info。</summary>
+        private static bool PickAsset(Dictionary<string, object> map, UpdateInfo info)
         {
             object assetsValue = Value(map, "assets");
             // JavaScriptSerializer 对数组可能给出 object[] 或 ArrayList，按 IEnumerable 统一处理。
             var assets = assetsValue as System.Collections.IEnumerable;
-            if (assets == null || assetsValue is string) return "";
+            if (assets == null || assetsValue is string) return false;
 
-            string fallback = "";
+            Dictionary<string, object> chosen = null;
             foreach (object item in assets)
             {
                 var asset = item as Dictionary<string, object>;
@@ -263,10 +356,43 @@ namespace EasyLabel.Core
                 string name = Str(asset, "name");
                 string url = Str(asset, "browser_download_url");
                 if (url.Length == 0 || !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
-                if (name.IndexOf("update", StringComparison.OrdinalIgnoreCase) >= 0) return url;
-                if (fallback.Length == 0) fallback = url;
+                if (name.IndexOf("update", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    chosen = asset;
+                    break;
+                }
+                if (chosen == null) chosen = asset;
             }
-            return fallback;
+            if (chosen == null) return false;
+
+            info.DownloadUrl = Str(chosen, "browser_download_url");
+            object size = Value(chosen, "size");
+            long parsed;
+            if (size != null && long.TryParse(Convert.ToString(size, CultureInfo.InvariantCulture),
+                    NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+            {
+                info.Size = parsed;
+            }
+            string digest = Str(chosen, "digest");
+            if (digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            {
+                info.Sha256 = digest.Substring(7).Trim();
+            }
+            return info.DownloadUrl.Length > 0;
+        }
+
+        /// <summary>把 GitHub 的 2026-10-28T15:04:05Z 收成 2026-10-28。</summary>
+        private static string ToDateText(string value)
+        {
+            string text = (value ?? "").Trim();
+            if (text.Length < 10) return text;
+            DateTime parsed;
+            if (DateTime.TryParse(text, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out parsed))
+            {
+                return parsed.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            }
+            return text.Substring(0, 10);
         }
 
         private static string CleanVersion(string value)
@@ -580,12 +706,25 @@ namespace EasyLabel.Core
 
         private static string DescribeWebError(WebException ex, string url)
         {
+            bool githubApi = IsGitHubFeed(url);
             var response = ex.Response as HttpWebResponse;
             if (response != null)
             {
                 int code = (int)response.StatusCode;
-                if (code == 404) return "更新地址不存在（404）：" + url;
-                if (code == 403) return "更新服务器拒绝访问（403），可能需要代理或该地址受限。";
+                if (code == 404)
+                {
+                    return githubApi
+                        ? "GitHub 上没有找到可用的发布（404）。可能还没发布正式版本，或该版本已被撤回。"
+                        : "更新地址不存在（404）：" + url;
+                }
+                if (code == 403 || code == 429)
+                {
+                    string remaining = null;
+                    try { remaining = response.Headers["X-RateLimit-Remaining"]; } catch { }
+                    if (githubApi && remaining == "0")
+                        return "GitHub 接口调用次数已用完（403），请过一段时间再试，或在设置里换成自建更新地址。";
+                    return "更新服务器拒绝访问（" + code + "），可能需要代理或该地址受限。";
+                }
                 return "更新服务器返回错误 " + code + "：" + response.StatusDescription;
             }
             switch (ex.Status)
