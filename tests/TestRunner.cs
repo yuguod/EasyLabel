@@ -19,6 +19,10 @@ internal static class TestRunner
         _outDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "out");
         Directory.CreateDirectory(_outDir);
 
+        // 测试期间不要动用户的字体目录。
+        FontLibrary.ResetForTests();
+        FontLibrary.FontDirectory = Path.Combine(_outDir, "fonts-ambient");
+
         TestSpecs();
         TestDpiGuess();
         TestNewSizes();
@@ -42,6 +46,8 @@ internal static class TestRunner
         TestTestPage();
         TestValidation();
         TestFontSize();
+        TestTextAlign();
+        TestFontLibrary();
         TestUpdates();
         TestLabelary();
 
@@ -1174,5 +1180,153 @@ internal static class TestRunner
         {
             Skip("labelary " + name, ex.GetType().Name + ": " + ex.Message);
         }
+    }
+
+    /// <summary>左/中/右三种对齐，文字墨迹的水平位置应依次右移。</summary>
+    private static void TestTextAlign()
+    {
+        var content = new LabelContent { Text = "AB" };
+        TextAlign[] aligns = { TextAlign.Left, TextAlign.Center, TextAlign.Right };
+        string[] names = { "left", "center", "right" };
+        int[] minX = new int[3];
+        int[] maxX = new int[3];
+
+        for (int i = 0; i < aligns.Length; i++)
+        {
+            var options = new RenderOptions
+            {
+                Dpi = 203,
+                LayoutMode = LayoutMode.TextOnly,
+                FontFamily = "Arial",
+                FontSizeMm = 4,
+                TextAlign = aligns[i]
+            };
+            using (RenderedLabel rendered = LabelRenderer.Render(LabelSpec.Label40x15, content, options))
+            {
+                rendered.Bitmap.Save(Path.Combine(_outDir, "align_" + names[i] + ".png"), ImageFormat.Png);
+                InkBounds(rendered.Bitmap, out minX[i], out maxX[i]);
+            }
+        }
+
+        Check(minX[0] < minX[1], "align left starts before center", minX[0] + " < " + minX[1]);
+        Check(minX[1] < minX[2], "align center starts before right", minX[1] + " < " + minX[2]);
+        Check(maxX[0] < maxX[1], "align left ends before center", maxX[0] + " < " + maxX[1]);
+        Check(maxX[1] < maxX[2], "align right ends last", maxX[1] + " < " + maxX[2]);
+        // 居中时左右留白应大致相等（半个字宽内）
+        using (RenderedLabel rendered = LabelRenderer.Render(LabelSpec.Label40x15, content,
+            new RenderOptions { Dpi = 203, LayoutMode = LayoutMode.TextOnly, FontFamily = "Arial", FontSizeMm = 4, TextAlign = TextAlign.Center }))
+        {
+            int left, right;
+            InkBounds(rendered.Bitmap, out left, out right);
+            int gapLeft = left;
+            int gapRight = rendered.WidthDots - 1 - right;
+            Check(Math.Abs(gapLeft - gapRight) <= 6, "align center is balanced", gapLeft + " vs " + gapRight);
+        }
+    }
+
+    private static void InkBounds(Bitmap bmp, out int minX, out int maxX)
+    {
+        minX = int.MaxValue;
+        maxX = -1;
+        for (int y = 0; y < bmp.Height; y++)
+        {
+            for (int x = 0; x < bmp.Width; x++)
+            {
+                Color c = bmp.GetPixel(x, y);
+                if (c.R > 128 || c.G > 128 || c.B > 128) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+            }
+        }
+        if (maxX < 0) { minX = 0; maxX = 0; }
+    }
+
+    /// <summary>字体库：导入 → 列表/枚举/建字体 → 删除，全程在临时目录里。</summary>
+    private static void TestFontLibrary()
+    {
+        string source = null;
+        foreach (string candidate in new[] { "arial.ttf", "segoeui.ttf", "simhei.ttf", "calibri.ttf" })
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), candidate);
+            if (File.Exists(path)) { source = path; break; }
+        }
+        if (source == null)
+        {
+            Skip("font library import", "系统字体目录里找不到可用的 ttf");
+            return;
+        }
+
+        string tempDir = Path.Combine(_outDir, "fonts-test");
+        try
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+        catch { }
+        Directory.CreateDirectory(tempDir);
+
+        FontLibrary.ResetForTests();
+        FontLibrary.FontDirectory = tempDir;
+        try
+        {
+            Check(FontLibrary.GetCustomFonts().Count == 0, "font library starts empty", "");
+
+            CustomFontInfo info = FontLibrary.Import(source);
+            Check(info != null && !string.IsNullOrEmpty(info.FamilyName), "font import returns family", info == null ? "" : info.DisplayName);
+            Check(File.Exists(info.FilePath), "font file copied", info.FilePath);
+            Check(FontLibrary.GetCustomFonts().Count == 1, "font library counts one", FontLibrary.GetCustomFonts().Count.ToString());
+            Check(ContainsFamily(FontLibrary.GetFamilies(), info.FamilyName), "font family listed", info.FamilyName);
+
+            using (Font font = FontLibrary.CreateFont(info.FamilyName, 48, false))
+            {
+                Check(font != null, "font created from library", font == null ? "" : font.Name);
+            }
+
+            // 用导入字体真正渲染一张，确认布局可用
+            var options = new RenderOptions
+            {
+                Dpi = 203,
+                LayoutMode = LayoutMode.TextOnly,
+                FontFamily = info.FamilyName,
+                FontSizeMm = 4
+            };
+            using (RenderedLabel rendered = LabelRenderer.Render(LabelSpec.Label40x15,
+                new LabelContent { Text = "Font Test 字体" }, options))
+            {
+                Check(rendered.WidthDots > 0 && rendered.HeightDots > 0, "render with imported font",
+                    rendered.WidthDots + "x" + rendered.HeightDots);
+            }
+
+            // 同名再导入应自动改名，不覆盖原文件
+            CustomFontInfo second = FontLibrary.Import(source);
+            Check(second.FileName != info.FileName, "duplicate import renamed", second.FileName);
+            Check(FontLibrary.GetCustomFonts().Count == 2, "font library counts two", FontLibrary.GetCustomFonts().Count.ToString());
+
+            Check(FontLibrary.Remove(info), "font file deleted", info.FilePath);
+            Check(!File.Exists(info.FilePath), "font file gone from disk", info.FilePath);
+            Check(FontLibrary.GetCustomFonts().Count == 1, "font library counts one after delete",
+                FontLibrary.GetCustomFonts().Count.ToString());
+
+            FontLibrary.Remove(second);
+            Check(FontLibrary.GetCustomFonts().Count == 0, "font library empty again", "");
+        }
+        catch (Exception ex)
+        {
+            Check(false, "font library exception", ex.GetType().Name + ": " + ex.Message);
+        }
+        finally
+        {
+            FontLibrary.ResetForTests();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    private static bool ContainsFamily(IList<string> families, string family)
+    {
+        if (families == null || string.IsNullOrEmpty(family)) return false;
+        foreach (string item in families)
+        {
+            if (string.Equals(item, family, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 }

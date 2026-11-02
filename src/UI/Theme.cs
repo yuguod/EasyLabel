@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using EasyLabel.Core;
 
 namespace EasyLabel.UI
 {
@@ -363,31 +364,51 @@ namespace EasyLabel.UI
         public static ComboBox FontFamilyCombo()
         {
             var c = Combo();
-            c.Items.AddRange(new object[]
-            {
-                "Microsoft YaHei UI",
-                "Microsoft YaHei",
-                "SimHei",
-                "SimSun",
-                "Segoe UI",
-                "Arial"
-            });
-            c.SelectedIndex = 0;
+            FillFontFamilies(c, null);
             c.Width = 170;
             return c;
         }
 
+        /// <summary>
+        /// 用「系统字体 + 程序内导入的字体」重新填充下拉框。
+        /// 常用字体排在最前，其余按字母序；能按首字母键盘跳转。
+        /// </summary>
+        public static void FillFontFamilies(ComboBox combo, string preserve)
+        {
+            if (combo == null) return;
+            string current = preserve;
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                current = combo.SelectedItem as string;
+                if (string.IsNullOrWhiteSpace(current)) current = combo.Text;
+            }
+
+            combo.BeginUpdate();
+            try
+            {
+                combo.Items.Clear();
+                foreach (string family in FontLibrary.GetFamiliesForPicker())
+                    combo.Items.Add(family);
+            }
+            finally
+            {
+                combo.EndUpdate();
+            }
+            SelectFontFamily(combo, current);
+        }
+
         public static string GetFontFamily(ComboBox combo)
         {
-            if (combo == null || combo.SelectedItem == null) return "Microsoft YaHei UI";
-            string value = Convert.ToString(combo.SelectedItem);
-            return string.IsNullOrWhiteSpace(value) ? "Microsoft YaHei UI" : value;
+            if (combo == null) return FontLibrary.DefaultFamily;
+            object item = combo.SelectedItem;
+            string value = item != null ? Convert.ToString(item) : combo.Text;
+            return string.IsNullOrWhiteSpace(value) ? FontLibrary.DefaultFamily : value.Trim();
         }
 
         public static void SelectFontFamily(ComboBox combo, string family)
         {
             if (combo == null) return;
-            if (string.IsNullOrWhiteSpace(family)) family = "Microsoft YaHei UI";
+            if (string.IsNullOrWhiteSpace(family)) family = FontLibrary.DefaultFamily;
             int index = combo.Items.IndexOf(family);
             if (index < 0)
             {

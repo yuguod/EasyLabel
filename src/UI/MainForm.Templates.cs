@@ -255,9 +255,11 @@ namespace EasyLabel.UI
                 int target = _currentPage == 1 ? 1 : 0;
                 if (target != _currentPage) ShowPage(target);
 
-                // 文字对齐没有单独的界面开关，统一由设置里的默认值决定，这里同步过去。
+                // 对齐既有编辑区的快捷开关，也有设置里的默认值；两边都同步成模版里的设置。
                 _settings.TextAlign = template.TextAlign;
                 if (_alignCombo != null) _alignCombo.SelectedIndex = ClampIndex(_alignCombo, (int)template.TextAlign);
+                if (_singleTextAlign != null) _singleTextAlign.SetValueSilent(template.TextAlign);
+                if (_batchTextAlign != null) _batchTextAlign.SelectedIndex = ClampIndex(_batchTextAlign, (int)template.TextAlign);
 
                 if (target == 0) ApplyTemplateToSingle(template);
                 else ApplyTemplateToBatch(template);

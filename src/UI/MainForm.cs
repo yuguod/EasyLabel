@@ -52,6 +52,9 @@ namespace EasyLabel.UI
             LayoutHeader();
             LayoutStatus();
             MinimumSize = new Size(Theme.S(1100), Theme.S(680));
+            // 字体导入/删除后，所有字体下拉同步刷新。先解绑避免重复订阅。
+            FontLibrary.Changed -= OnFontLibraryChanged;
+            FontLibrary.Changed += OnFontLibraryChanged;
             _previewTimer = new System.Windows.Forms.Timer { Interval = 180 };
             _previewTimer.Tick += (s, e) =>
             {

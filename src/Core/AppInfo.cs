@@ -17,7 +17,7 @@ namespace EasyLabel.Core
         public const string Author = "yuguod";
         public const string ProjectUrl = "https://github.com/yuguod/EasyLabel";
         public const string Copyright = "Copyright © 2026 " + Author + ". 保留所有权利。";
-        public const string ReleaseDate = "2026 年 10 月";
+        public const string ReleaseDate = "2026 年 11 月";
 
         private static string _version;
 

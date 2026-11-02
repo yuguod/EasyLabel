@@ -37,6 +37,7 @@ namespace EasyLabel.UI
         private NumericUpDown _batchMarginRight;
         private ComboBox _batchFontSize;
         private ComboBox _batchFontFamily;
+        private ComboBox _batchTextAlign;
         private CheckBox _batchBold;
         private NumericUpDown _batchBarcodeScale;
         private NumericUpDown _batchQrScale;
@@ -296,8 +297,8 @@ namespace EasyLabel.UI
 
         private void BuildBatchOptionsCard(FlowLayoutPanel flow)
         {
-            var card = AddCard(flow, "批量版式", 626);
-            var table = UiKit.FormTable(16);
+            var card = AddCard(flow, "批量版式", 664);
+            var table = UiKit.FormTable(17);
 
             _batchLabelSize = UiKit.Combo();
             FillLabelSizeCombo(_batchLabelSize, _settings.GetLabelSpec());
@@ -345,29 +346,37 @@ namespace EasyLabel.UI
             UiKit.AddRow(table, 6, "文字样式", _batchBold);
             _batchBold.Anchor = AnchorStyles.Left;
 
+            _batchTextAlign = UiKit.Combo();
+            _batchTextAlign.Width = 118;
+            _batchTextAlign.Items.AddRange(new object[] { "左对齐", "居中", "右对齐" });
+            _batchTextAlign.SelectedIndex = (int)_settings.TextAlign;
+            _batchTextAlign.SelectedIndexChanged += (s, e) => OnBatchOptionsChanged();
+            UiKit.AddRow(table, 7, "文字对齐", _batchTextAlign);
+            _batchTextAlign.Anchor = AnchorStyles.Left;
+
             _batchMarginTop = UiKit.Numeric(0, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
             _batchMarginTop.ValueChanged += (s, e) => OnBatchOptionsChanged();
-            UiKit.AddRow(table, 7, "上边距 mm", _batchMarginTop);
+            UiKit.AddRow(table, 8, "上边距 mm", _batchMarginTop);
 
             _batchMarginBottom = UiKit.Numeric(0, 20, (decimal)_settings.MarginBottomMm, 1, 0.1m);
             _batchMarginBottom.ValueChanged += (s, e) => OnBatchOptionsChanged();
-            UiKit.AddRow(table, 8, "下边距 mm", _batchMarginBottom);
+            UiKit.AddRow(table, 9, "下边距 mm", _batchMarginBottom);
 
             _batchMarginLeft = UiKit.Numeric(0, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
             _batchMarginLeft.ValueChanged += (s, e) => OnBatchOptionsChanged();
-            UiKit.AddRow(table, 9, "左边距 mm", _batchMarginLeft);
+            UiKit.AddRow(table, 10, "左边距 mm", _batchMarginLeft);
 
             _batchMarginRight = UiKit.Numeric(0, 20, (decimal)_settings.MarginRightMm, 1, 0.1m);
             _batchMarginRight.ValueChanged += (s, e) => OnBatchOptionsChanged();
-            UiKit.AddRow(table, 10, "右边距 mm", _batchMarginRight);
+            UiKit.AddRow(table, 11, "右边距 mm", _batchMarginRight);
 
             _batchBarcodeScale = UiKit.Numeric(70, 130, _settings.BarcodeHeightPercent, 0, 5);
             _batchBarcodeScale.ValueChanged += (s, e) => OnBatchOptionsChanged();
-            UiKit.AddRow(table, 11, "条码高度 %", _batchBarcodeScale);
+            UiKit.AddRow(table, 12, "条码高度 %", _batchBarcodeScale);
 
             _batchQrScale = UiKit.Numeric(70, 130, _settings.QrSizePercent, 0, 5);
             _batchQrScale.ValueChanged += (s, e) => OnBatchOptionsChanged();
-            UiKit.AddRow(table, 12, "二维码 %", _batchQrScale);
+            UiKit.AddRow(table, 13, "二维码 %", _batchQrScale);
 
             var checks = new FlowLayoutPanel
             {
@@ -393,17 +402,17 @@ namespace EasyLabel.UI
             };
             checks.Controls.Add(_batchBarcodeEnabled);
             checks.Controls.Add(_batchQrEnabled);
-            table.Controls.Add(checks, 0, 13);
+            table.Controls.Add(checks, 0, 14);
             table.SetColumnSpan(checks, 2);
 
             _batchFallback = UiKit.Check("空值时用文本补齐", true);
             _batchFallback.CheckedChanged += (s, e) => OnBatchOptionsChanged();
-            table.Controls.Add(_batchFallback, 0, 14);
+            table.Controls.Add(_batchFallback, 0, 15);
             table.SetColumnSpan(_batchFallback, 2);
 
             _batchShowHri = UiKit.Check("显示一维码明文", true);
             _batchShowHri.CheckedChanged += (s, e) => OnBatchOptionsChanged();
-            table.Controls.Add(_batchShowHri, 0, 15);
+            table.Controls.Add(_batchShowHri, 0, 16);
             table.SetColumnSpan(_batchShowHri, 2);
 
             card.Content.Controls.Add(table);
@@ -479,7 +488,7 @@ namespace EasyLabel.UI
                 LayoutPlan = _batchLayoutPlan == null ? null : _batchLayoutPlan.Clone(),
                 BarcodeHeightPercent = (int)_batchBarcodeScale.Value,
                 QrSizePercent = (int)_batchQrScale.Value,
-                TextAlign = _settings.TextAlign
+                TextAlign = _batchTextAlign == null ? _settings.TextAlign : (TextAlign)Math.Max(0, _batchTextAlign.SelectedIndex)
             };
         }
 

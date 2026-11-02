@@ -26,6 +26,7 @@ namespace EasyLabel.UI
         private ComboBox _singleQrEcc;
         private ComboBox _singleFontSize;
         private ComboBox _singleFontFamily;
+        private AlignSelector _singleTextAlign;
         private CheckBox _singleBold;
         private NumericUpDown _singleCopies;
         private NumericUpDown _singleMarginTop;
@@ -288,8 +289,8 @@ namespace EasyLabel.UI
             qt.SetColumnSpan(qrHint, 2);
             qrCard.Content.Controls.Add(qt);
 
-            var layoutCard = AddCard(flow, "高级版式", 380);
-            var lt = UiKit.FormTable(9);
+            var layoutCard = AddCard(flow, "高级版式", 424);
+            var lt = UiKit.FormTable(10);
 
             _singleFontFamily = UiKit.FontFamilyCombo();
             UiKit.SelectFontFamily(_singleFontFamily, _settings.DefaultFontFamily);
@@ -302,41 +303,46 @@ namespace EasyLabel.UI
             UiKit.AddRow(lt, 1, "文字样式", _singleBold);
             _singleBold.Anchor = AnchorStyles.Left;
 
+            _singleTextAlign = new AlignSelector(_settings.TextAlign);
+            _singleTextAlign.ValueChanged += (s, e) => SchedulePreview();
+            UiKit.AddRow(lt, 2, "文字对齐", _singleTextAlign);
+            _singleTextAlign.Anchor = AnchorStyles.Left;
+
             _singleMarginTop = UiKit.Numeric(0, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
             _singleMarginTop.ValueChanged += (s, e) => SchedulePreview();
-            UiKit.AddRow(lt, 2, "上边距 mm", _singleMarginTop);
+            UiKit.AddRow(lt, 3, "上边距 mm", _singleMarginTop);
             _singleMarginTop.Anchor = AnchorStyles.Left;
 
             _singleMarginBottom = UiKit.Numeric(0, 20, (decimal)_settings.MarginBottomMm, 1, 0.1m);
             _singleMarginBottom.ValueChanged += (s, e) => SchedulePreview();
-            UiKit.AddRow(lt, 3, "下边距 mm", _singleMarginBottom);
+            UiKit.AddRow(lt, 4, "下边距 mm", _singleMarginBottom);
             _singleMarginBottom.Anchor = AnchorStyles.Left;
 
             _singleMarginLeft = UiKit.Numeric(0, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
             _singleMarginLeft.ValueChanged += (s, e) => SchedulePreview();
-            UiKit.AddRow(lt, 4, "左边距 mm", _singleMarginLeft);
+            UiKit.AddRow(lt, 5, "左边距 mm", _singleMarginLeft);
             _singleMarginLeft.Anchor = AnchorStyles.Left;
 
             _singleMarginRight = UiKit.Numeric(0, 20, (decimal)_settings.MarginRightMm, 1, 0.1m);
             _singleMarginRight.ValueChanged += (s, e) => SchedulePreview();
-            UiKit.AddRow(lt, 5, "右边距 mm", _singleMarginRight);
+            UiKit.AddRow(lt, 6, "右边距 mm", _singleMarginRight);
             _singleMarginRight.Anchor = AnchorStyles.Left;
 
             _singleBarcodeScale = UiKit.Numeric(70, 130, _settings.BarcodeHeightPercent, 0, 5);
             _singleBarcodeScale.ValueChanged += (s, e) => SchedulePreview();
-            UiKit.AddRow(lt, 6, "条码高度 %", _singleBarcodeScale);
+            UiKit.AddRow(lt, 7, "条码高度 %", _singleBarcodeScale);
             _singleBarcodeScale.Anchor = AnchorStyles.Left;
 
             _singleQrScale = UiKit.Numeric(70, 130, _settings.QrSizePercent, 0, 5);
             _singleQrScale.ValueChanged += (s, e) => SchedulePreview();
-            UiKit.AddRow(lt, 7, "二维码 %", _singleQrScale);
+            UiKit.AddRow(lt, 8, "二维码 %", _singleQrScale);
             _singleQrScale.Anchor = AnchorStyles.Left;
 
-            var note = Theme.Label("四边距独立；文字大小以 mm 指定，空间不足会自动缩小并提示。", 8.2f, Theme.Muted);
+            var note = Theme.Label("对齐决定文字在文字框内的水平位置；四边距独立。", 8.2f, Theme.Muted);
             note.AutoSize = false;
             note.Dock = DockStyle.Fill;
             note.MinimumSize = new Size(0, 28);
-            lt.Controls.Add(note, 0, 8);
+            lt.Controls.Add(note, 0, 9);
             lt.SetColumnSpan(note, 2);
 
             layoutCard.Content.Controls.Add(lt);
@@ -422,6 +428,7 @@ namespace EasyLabel.UI
             o.MarginRightMm = (double)_singleMarginRight.Value;
             o.FontSizeMm = UiKit.GetFontSizeMm(_singleFontSize);
             o.FontFamily = UiKit.GetFontFamily(_singleFontFamily);
+            o.TextAlign = _singleTextAlign == null ? _settings.TextAlign : _singleTextAlign.Value;
             o.Bold = _singleBold.Checked;
             o.LayoutPlan = _singleLayoutPlan == null ? null : _singleLayoutPlan.Clone();
             o.BarcodeHeightPercent = (int)_singleBarcodeScale.Value;

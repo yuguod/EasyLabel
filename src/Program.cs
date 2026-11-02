@@ -52,6 +52,9 @@ namespace EasyLabel
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Theme.Initialize(new Size(1280, 720));
+            // 私有字体要在任何字体下拉、预览渲染之前加载好。
+            try { FontLibrary.EnsureLoaded(); }
+            catch (Exception ex) { Logger.Error("加载自定义字体失败", ex); }
             Application.ThreadException += (s, e) =>
             {
                 Logger.Error("未处理的界面异常", e.Exception);

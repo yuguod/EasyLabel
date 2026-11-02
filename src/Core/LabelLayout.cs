@@ -681,17 +681,9 @@ namespace EasyLabel.Core
 
         private Font CreateFont(float px, bool bold)
         {
-            if (px < 1) px = 1;
             string family = string.IsNullOrWhiteSpace(Options.FontFamily) ? UiFontName : Options.FontFamily;
-            FontStyle style = bold ? FontStyle.Bold : FontStyle.Regular;
-            try
-            {
-                return new Font(family, px, style, GraphicsUnit.Pixel);
-            }
-            catch
-            {
-                return new Font(FontFamily.GenericSansSerif, px, style, GraphicsUnit.Pixel);
-            }
+            // 用户导入的 ttf 走私有字体集合，系统字体走普通构造；两者都在 FontLibrary 里处理。
+            return FontLibrary.CreateFont(family, px, bold);
         }
 
         private StringFormat CreateStringFormat(bool hri)

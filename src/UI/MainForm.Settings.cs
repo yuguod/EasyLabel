@@ -359,7 +359,7 @@ namespace EasyLabel.UI
 
         private void BuildMaintenanceCard(FlowLayoutPanel flow)
         {
-            var card = AddCard(flow, "维护与关于", 210);
+            var card = AddCard(flow, "维护与关于", 250);
             var table = UiKit.FormTable(4);
 
             var openData = UiKit.SecondaryButton("打开数据目录");
@@ -375,20 +375,24 @@ namespace EasyLabel.UI
                 string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "samples");
                 OpenFolder(Directory.Exists(dir) ? dir : AppDomain.CurrentDomain.BaseDirectory);
             };
+            var fonts = UiKit.SecondaryButton("字体管理…");
+            fonts.Width = 128;
+            fonts.Click += (s, e) => OpenFontManager();
             var about = UiKit.SecondaryButton("关于");
             about.Width = 128;
             about.Click += (s, e) => ShowPage(4);
 
-            var row = new FlowLayoutPanel { Dock = DockStyle.Fill, Height = 80, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = Theme.Card };
+            var row = new FlowLayoutPanel { Dock = DockStyle.Fill, Height = 118, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = Theme.Card };
             row.Controls.Add(openData);
             row.Controls.Add(openLogs);
             row.Controls.Add(openSamples);
+            row.Controls.Add(fonts);
             row.Controls.Add(about);
             table.Controls.Add(row, 0, 0);
             table.SetColumnSpan(row, 2);
 
-            var hint = Theme.Label("设置保存在 " + AppSettings.SettingsPath + "\r\n" +
-                                   "日志按天写入 logs 目录；打印内容不会写入日志。", 8.3f, Theme.Muted);
+            var hint = Theme.Label("导入的 ttf / otf 只对本程序生效，保存在数据目录的 Fonts 子目录。\r\n" +
+                                   "设置保存在 " + AppSettings.SettingsPath + "；打印内容不写日志。", 8.3f, Theme.Muted);
             hint.AutoSize = false;
             hint.Dock = DockStyle.Fill;
             hint.MinimumSize = new Size(0, 48);
@@ -578,6 +582,35 @@ namespace EasyLabel.UI
             }
         }
 
+        private void OpenFontManager()
+        {
+            using (var dialog = new FontManagerDialog())
+            {
+                dialog.ShowDialog(this);
+            }
+        }
+
+        private void OnFontLibraryChanged(object sender, EventArgs e)
+        {
+            try { RefreshFontCombos(); }
+            catch { }
+        }
+
+        /// <summary>字体库有增删后，把三个字体下拉重新填充，保留当前选中值。</summary>
+        private void RefreshFontCombos()
+        {
+            RefreshFontCombo(_singleFontFamily);
+            RefreshFontCombo(_batchFontFamily);
+            RefreshFontCombo(_settingsFontFamily);
+        }
+
+        private static void RefreshFontCombo(ComboBox combo)
+        {
+            if (combo == null) return;
+            string current = UiKit.GetFontFamily(combo);
+            UiKit.FillFontFamilies(combo, current);
+        }
+
         private void OpenFolder(string path)
         {
             try
@@ -610,6 +643,8 @@ namespace EasyLabel.UI
                 if (_batchFontFamily != null) UiKit.SelectFontFamily(_batchFontFamily, _settings.DefaultFontFamily);
                 if (_singleBold != null) _singleBold.Checked = _settings.DefaultBold;
                 if (_batchBold != null) _batchBold.Checked = _settings.DefaultBold;
+                if (_singleTextAlign != null) _singleTextAlign.SetValueSilent(_settings.TextAlign);
+                if (_batchTextAlign != null) _batchTextAlign.SelectedIndex = (int)_settings.TextAlign;
 
                 if (_singleMarginTop != null) _singleMarginTop.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginTopMm));
                 if (_singleMarginBottom != null) _singleMarginBottom.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginBottomMm));
