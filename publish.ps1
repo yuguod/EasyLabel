@@ -207,10 +207,12 @@ else {
 # ---------------------------------------------------------------- 推送
 if (-not $SkipPush) {
     Step '推送提交与标签'
-    $code = Run $Git @('push', 'origin', "HEAD:refs/heads/$branch")
+    # -q：push 正常时会把 "To https://..." 和进度打到 stderr，被外层管道当错误；
+    # 静默后只保留真正的报错，脚本成功就是成功。
+    $code = Run $Git @('push', '-q', 'origin', "HEAD:refs/heads/$branch")
     if ($code -ne 0) { Fail "推送分支失败（exit=$code）" }
     if ($pushTag) {
-        $code = Run $Git @('push', 'origin', "refs/tags/$tag")
+        $code = Run $Git @('push', '-q', 'origin', "refs/tags/$tag")
         if ($code -ne 0) { Fail "推送标签失败（exit=$code）" }
     }
     else {
