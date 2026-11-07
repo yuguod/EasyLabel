@@ -1,12 +1,12 @@
-# EasyLabel 标签轻松打 v1.6.0
+# EasyLabel 标签轻松打 v1.10.0
 
 Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×20 mm** 和自定义尺寸，单张文本打印、Excel/CSV 批量打印，以及 Code 128 / Code 39 / EAN-13 一维码和 QR 二维码。
 
 程序采用 **ZPL 直发**：把整张标签渲染成 1-bit 点阵，通过 `^GFA` 发送给打印机，不经过 Windows 驱动的页面缩放和重新排版。中文、条码、二维码的预览与实际打印使用同一张位图。
 
 > **直接使用**：到 [Releases](https://github.com/yuguod/EasyLabel/releases) 下载最新版。
-> 推荐 `EasyLabel-1.6.0-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
-> 也可以下载 `EasyLabel-1.6.0-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
+> 推荐 `EasyLabel-1.10.0-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
+> 也可以下载 `EasyLabel-1.10.0-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
 
 ![单张打印](docs/screenshot-single.png)
 
@@ -29,7 +29,7 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 
 ### 安装版
 
-运行 `EasyLabel-1.6.0-Setup.exe`：
+运行 `EasyLabel-1.10.0-Setup.exe`：
 
 1. 安装目录默认 `%LOCALAPPDATA%\Programs\EasyLabel`（当前用户，不需要管理员权限）。也可以改成任意目录；填 `C:\Program Files\...` 时安装程序会自动请求管理员权限，并改为“所有用户”安装（注册表写 HKLM、快捷方式放进公共开始菜单）。
 2. 可选“创建桌面快捷方式”“安装完成后启动”。
@@ -41,8 +41,8 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 无人值守部署（IT 批量装）：
 
 ```bat
-EasyLabel-1.6.0-Setup.exe /S /D="D:\Tools\EasyLabel"
-EasyLabel-1.6.0-Setup.exe /uninstall /S
+EasyLabel-1.10.0-Setup.exe /S /D="D:\Tools\EasyLabel"
+EasyLabel-1.10.0-Setup.exe /uninstall /S
 ```
 
 `/S` 静默安装（默认目录）、`/D=` 指定目录、`/uninstall` 卸载；静默卸载会结束正在运行的程序并保留用户设置。
@@ -51,7 +51,7 @@ EasyLabel-1.6.0-Setup.exe /uninstall /S
 
 三种入口，效果相同：
 
-- 点左侧栏底部的版本号（`v1.6.0 · 安装版`）；
+- 点左侧栏底部的版本号（`v1.10.0 · 安装版`）；
 - “关于 → 检查更新”；
 - 启动时自动检查（默认开启，每天最多一次，可在“打印机设置 → 软件更新”关闭）。
 
@@ -72,7 +72,7 @@ EasyLabel-1.6.0-Setup.exe /uninstall /S
 | 留空 | `api.github.com/repos/yuguod/EasyLabel/releases/latest` |
 | `https://github.com/yuguod/EasyLabel` | 同上（仓库主页） |
 | `https://github.com/yuguod/EasyLabel/releases` | 同上（发布页） |
-| `https://github.com/yuguod/EasyLabel/releases/tag/v1.6.0` | `.../releases/tags/v1.6.0`（指定版本） |
+| `https://github.com/yuguod/EasyLabel/releases/tag/v1.10.0` | `.../releases/tags/v1.10.0`（指定版本） |
 | 其他 URL（如内网 `http://intranet/update.json`） | 原样请求 |
 
 默认地址失败时会自动再试一次仓库里的 `update.json`（两条链路的可达性不同），仍失败才报错。
@@ -85,9 +85,9 @@ EasyLabel-1.6.0-Setup.exe /uninstall /S
 
 ```json
 {
-  "version": "1.6.0",
-  "releaseDate": "2026-10-28",
-  "url": "https://example.com/easylabel/EasyLabel-1.6.0-update.zip",
+  "version": "1.10.0",
+  "releaseDate": "2026-11-07",
+  "url": "https://example.com/easylabel/EasyLabel-1.10.0-update.zip",
   "sha256": "（更新包的 SHA-256，小写；留空则跳过校验）",
   "size": 1234567,
   "mandatory": false,
@@ -390,6 +390,15 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 
 发送测试页后，程序会弹出提示，告诉你如何根据外框宽度判断 DPI 是否选错。
 
+### 打印位置偏了
+
+尺寸对、位置不对（内容整体偏 1–2 mm、贴不到标签边缘）属于打印机固定偏差，不是版式问题，按这个顺序处理：
+
+1. **先量测试页**：打印测试页，量外框左边缘到标签左边的距离（X）、上边缘到标签上边的距离（Y）。每次偏差都差不多，才说明是机器固定偏位。
+2. **用打印偏移补偿抵消**：打印机设置 → 打印偏移补偿，X 填该差值的**相反数**（实际偏右 1.5 mm 就填 −1.5），Y 同理；重打一张确认。范围 −20–20 mm，详见 [打印偏移补偿](#打印偏移补偿)。
+3. 不想动全局设置，也可以在 **布局编辑** 里把整块内容拖过去（允许拖出标签 8 mm），或把上/左边距填成负数——三种办法都是“平移内容”，**选一种即可，不要叠加**。
+4. 如果偏差时大时小、忽左忽右，多半是标签在纸上贴歪或走纸不稳，先做介质校准、检查导纸器。
+
 ---
 
 ## 10. 保存 ZPL / 离线排查
@@ -418,6 +427,13 @@ DPI 必须与打印机实际分辨率一致，否则标签会整体偏大/偏小
 - 90% 是 DPI 选错。600 dpi 机器应选择 600；错选 203 会放大、300 会偏移。
 - 确认标签规格选择正确（40×15 / 30×25 / 30×20 / 自定义）。
 - 如果整体尺寸正确但文字仍小：在单张页顶部把“文字大小”从“自动”改成 4–7 mm；如果同时有文字+条码+二维码，40×15 的文字区域很小，建议改用 30×25、30×20 或纯文本版式。
+
+**打印位置整体偏移 1–2 mm**
+
+- 这是打印机的固定偏位（机械起始位置、非打印区、标签贴偏），跟版式无关。
+- 到 **打印机设置 → 打印偏移补偿** 填 X / Y 偏移（−20–20 mm，精度 0.1 mm），一次抵消，换机器重新调。
+- 也可以把上/左边距设为负数，或在布局编辑里把内容整体拖动，三者择一，不要叠加。
+- 详见 [打印位置偏了](#打印位置偏了)。
 
 **条码扫描不出来**
 
@@ -473,9 +489,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 
 - `dist/EasyLabel/EasyLabel.exe`（单文件，依赖已内嵌）
 - `dist/EasyLabel/EasyLabelUpdater.exe`（在线更新的替换程序）
-- `dist/EasyLabel-1.6.0-win64.zip`（绿色版）
-- `dist/EasyLabel-1.6.0-update.zip`（在线更新包）
-- `dist/EasyLabel-1.6.0-Setup.exe`（安装版，更新包已内嵌）
+- `dist/EasyLabel-1.10.0-win64.zip`（绿色版）
+- `dist/EasyLabel-1.10.0-update.zip`（在线更新包）
+- `dist/EasyLabel-1.10.0-Setup.exe`（安装版，更新包已内嵌）
 - `dist/update.json`（更新清单，含 SHA-256 与包大小）
 - 构建脚本会把上述产物同步归档到 `releases/`，以后每个版本都保留，不覆盖旧包。
 
