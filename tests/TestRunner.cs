@@ -38,6 +38,7 @@ internal static class TestRunner
         TestLayoutPlan();
         TestLayoutPlanRoundTrip();
         TestMarginsWithLayoutPlan();
+        TestPrintOffsetAndNegativeMargins();
         TestLegacyLayoutMigration();
         TestLayoutHelpers();
         TestZplCopies();
@@ -591,6 +592,137 @@ internal static class TestRunner
             MarginRightMm = margin,
             LayoutPlan = plan
         };
+    }
+
+    /// <summary>打印偏移、负边距、越界布局：三条“手动补偿”路径都要真的动到墨迹。</summary>
+    private static void TestPrintOffsetAndNegativeMargins()
+    {
+        LabelSpec spec = LabelSpec.CreateCustom(55, 33);
+        var content = new LabelContent { Text = "AB" };
+
+        // ---- 打印偏移补偿：整幅平移，X/Y 各按点阵走 ----
+        RenderOptions plain = OffsetTestOptions(2, null, TextAlign.Center);
+        RenderOptions moved = OffsetTestOptions(2, null, TextAlign.Center);
+        moved.OffsetXMm = 3;
+        moved.OffsetYMm = 2;
+
+        Rectangle at0, at3;
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, plain)) at0 = InkRect(r.Bitmap);
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, moved)) at3 = InkRect(r.Bitmap);
+        Check(at0.Width > 0 && at3.Width > 0, "offset ink present", at0 + " / " + at3);
+        Check(Math.Abs((at3.X - at0.X) - 3 * 8) <= 2, "offset x shifts ink", at0.X + " -> " + at3.X);
+        Check(Math.Abs((at3.Y - at0.Y) - 2 * 8) <= 2, "offset y shifts ink", at0.Y + " -> " + at3.Y);
+
+        RenderOptions bigOffset = new RenderOptions { OffsetXMm = 25, OffsetYMm = -25 };
+        bigOffset.Normalize();
+        Check(bigOffset.OffsetXMm == 20 && bigOffset.OffsetYMm == -20, "offset clamped",
+            bigOffset.OffsetXMm + " / " + bigOffset.OffsetYMm);
+
+        // ---- 负边距：纯平移，安全区尺寸不变 ----
+        RenderOptions zero = OffsetTestOptions(0, null, TextAlign.Center);
+        RenderOptions negative = OffsetTestOptions(0, null, TextAlign.Center);
+        negative.MarginLeftMm = -3;
+        negative.MarginTopMm = -2;
+        negative.Normalize();
+
+        using (var bmp = new Bitmap(1, 1))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            LabelLayout l0 = LabelLayout.Build(spec, content, zero, g);
+            LabelLayout ln = LabelLayout.Build(spec, content, negative, g);
+            Check(ln.IsValid, "negative margin layout valid", string.Join("；", ln.Errors.ToArray()));
+            Check(Math.Abs(ln.TextRect.Width - l0.TextRect.Width) < 0.6f, "negative margin keeps width",
+                l0.TextRect.Width.ToString("0.0") + " vs " + ln.TextRect.Width.ToString("0.0"));
+            Check(Math.Abs(ln.TextRect.Left + 3 * 8) < 1.6f, "negative left margin shifts origin",
+                ln.TextRect.Left.ToString("0.0"));
+            Check(Math.Abs(ln.TextRect.Top + 2 * 8) < 1.6f, "negative top margin shifts origin",
+                ln.TextRect.Top.ToString("0.0"));
+        }
+
+        Rectangle negInk;
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, negative)) negInk = InkRect(r.Bitmap);
+        Check(Math.Abs((at0.X - negInk.X) - 3 * 8) <= 2, "negative margin shifts ink", at0.X + " -> " + negInk.X);
+
+        RenderOptions clamped = new RenderOptions
+        {
+            MarginLeftMm = -30,
+            MarginTopMm = 30,
+            MarginBottomMm = -5,
+            MarginRightMm = 40
+        };
+        clamped.Normalize();
+        Check(clamped.MarginLeftMm == -20 && clamped.MarginTopMm == 20 &&
+              clamped.MarginBottomMm == 0 && clamped.MarginRightMm == 20,
+            "margin clamps", clamped.MarginLeftMm + "/" + clamped.MarginTopMm + "/" +
+                             clamped.MarginBottomMm + "/" + clamped.MarginRightMm);
+
+        // ---- 越界布局：元素可以放到标签外，不再被夹回安全区 ----
+        var outside = new LayoutPlan { Text = new RectangleF(-6, -2, 20, 10) };
+        RenderOptions withPlan = OffsetTestOptions(5, outside, TextAlign.Left);
+        using (var bmp = new Bitmap(1, 1))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            LabelLayout lp = LabelLayout.Build(spec, content, withPlan, g);
+            Check(lp.IsValid, "out-of-bounds plan valid", string.Join("；", lp.Errors.ToArray()));
+            Check(lp.TextRect.Left < -1f, "out-of-bounds plan not clamped", lp.TextRect.Left.ToString("0.0"));
+            Check(Math.Abs(lp.TextRect.Left - (5 - 6) * 8) < 2f, "out-of-bounds plan applied",
+                lp.TextRect.Left.ToString("0.0"));
+        }
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, withPlan))
+        {
+            Rectangle ink = InkRect(r.Bitmap);
+            Check(ink.Width > 0 && ink.X == 0, "out-of-bounds content clipped at edge", ink.ToString());
+            r.Bitmap.Save(Path.Combine(_outDir, "out-of-bounds-plan.png"), ImageFormat.Png);
+        }
+
+        // ---- 允许越界的范围：标签四边各 8 mm ----
+        RenderOptions allowOptions = OffsetTestOptions(1.2, null, TextAlign.Left);
+        RectangleF allow = LayoutPlan.AllowBox(spec, allowOptions);
+        Check(Math.Abs(allow.X + 9.2f) < 0.05f && Math.Abs(allow.Width - 71f) < 0.05f,
+            "allow box covers overflow", Fmt(allow));
+
+        // ---- 设置 → 渲染参数 ----
+        var settings = new AppSettings { PrintOffsetXMm = -1.5, PrintOffsetYMm = 2.5 };
+        RenderOptions fromSettings = settings.CreateRenderOptions();
+        Check(fromSettings.OffsetXMm == -1.5 && fromSettings.OffsetYMm == 2.5,
+            "settings offset into render options",
+            fromSettings.OffsetXMm + " / " + fromSettings.OffsetYMm);
+    }
+
+    private static RenderOptions OffsetTestOptions(double margin, LayoutPlan plan, TextAlign align)
+    {
+        return new RenderOptions
+        {
+            Dpi = 203,
+            LayoutMode = LayoutMode.TextOnly,
+            TextAlign = align,
+            FontFamily = "SimHei",
+            FontSizeMm = 4,
+            MarginTopMm = margin,
+            MarginBottomMm = margin,
+            MarginLeftMm = margin,
+            MarginRightMm = margin,
+            LayoutPlan = plan
+        };
+    }
+
+    private static Rectangle InkRect(Bitmap bmp)
+    {
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = -1, maxY = -1;
+        for (int y = 0; y < bmp.Height; y++)
+        {
+            for (int x = 0; x < bmp.Width; x++)
+            {
+                Color c = bmp.GetPixel(x, y);
+                if (c.R > 128 || c.G > 128 || c.B > 128) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (maxX < 0) return Rectangle.Empty;
+        return Rectangle.FromLTRB(minX, minY, maxX + 1, maxY + 1);
     }
 
     /// <summary>旧版模版里的布局是绝对坐标，读取时要按当时的边距平移过来。</summary>

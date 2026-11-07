@@ -69,6 +69,14 @@ namespace EasyLabel.Core
                     layout = LabelLayout.Build(spec, content, options, g);
                     if (!layout.IsValid)
                         throw new LabelRenderException(layout.Errors);
+
+                    // 打印偏移补偿：整幅内容按点阵整体平移，超出标签的部分随之被裁掉。
+                    // 放在位图里而不是 ^LH 里，是因为部分固件对负的 ^LH 支持不一致，
+                    // 而位图偏移是“所见即所得”，预览、另存 ZPL、网络直发三条路径完全一致。
+                    int offsetX = options.MmToDots(options.OffsetXMm);
+                    int offsetY = options.MmToDots(options.OffsetYMm);
+                    if (offsetX != 0 || offsetY != 0)
+                        g.TranslateTransform(offsetX, offsetY);
                     layout.Draw(g);
                 }
 

@@ -263,8 +263,7 @@ namespace EasyLabel.Core
 
             if (LayoutPlan != null)
             {
-                LayoutPlan.Normalize(GetSpec(), LayoutPlan.ContentBox(GetSpec(),
-                    MarginLeftMm, MarginTopMm, MarginRightMm, MarginBottomMm));
+                LayoutPlan.Normalize(GetSpec(), LayoutPlan.AllowBox(GetSpec(), MarginLeftMm, MarginTopMm));
             }
         }
 

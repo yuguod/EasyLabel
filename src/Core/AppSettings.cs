@@ -29,6 +29,10 @@ namespace EasyLabel.Core
         public double MarginBottomMm { get; set; }
         public double MarginLeftMm { get; set; }
         public double MarginRightMm { get; set; }
+
+        /// <summary>打印偏移补偿（mm）：整幅内容平移，用来抵消打印机固定的起始/贴偏误差。</summary>
+        public double PrintOffsetXMm { get; set; }
+        public double PrintOffsetYMm { get; set; }
         public int SettingsVersion { get; set; }
         public TextAlign TextAlign { get; set; }
         public string LastFolder { get; set; }
@@ -61,6 +65,8 @@ namespace EasyLabel.Core
             MarginBottomMm = 1.2;
             MarginLeftMm = 1.2;
             MarginRightMm = 1.2;
+            PrintOffsetXMm = 0;
+            PrintOffsetYMm = 0;
             SettingsVersion = 2;
             TextAlign = TextAlign.Center;
             LastFolder = "";
@@ -168,6 +174,8 @@ namespace EasyLabel.Core
                 settings.MarginBottomMm = GetDouble(root, "MarginBottomMm", legacyMargin);
                 settings.MarginLeftMm = GetDouble(root, "MarginLeftMm", legacyMargin);
                 settings.MarginRightMm = GetDouble(root, "MarginRightMm", legacyMargin);
+                settings.PrintOffsetXMm = GetDouble(root, "PrintOffsetXMm", 0);
+                settings.PrintOffsetYMm = GetDouble(root, "PrintOffsetYMm", 0);
                 settings.SettingsVersion = GetInt(root, "SettingsVersion", 0);
                 settings.TextAlign = (TextAlign)GetInt(root, "TextAlign", (int)settings.TextAlign);
                 settings.LastFolder = Get(root, "LastFolder", settings.LastFolder);
@@ -220,6 +228,8 @@ namespace EasyLabel.Core
                     new XElement("MarginBottomMm", MarginBottomMm.ToString("0.##", CultureInfo.InvariantCulture)),
                     new XElement("MarginLeftMm", MarginLeftMm.ToString("0.##", CultureInfo.InvariantCulture)),
                     new XElement("MarginRightMm", MarginRightMm.ToString("0.##", CultureInfo.InvariantCulture)),
+                    new XElement("PrintOffsetXMm", PrintOffsetXMm.ToString("0.##", CultureInfo.InvariantCulture)),
+                    new XElement("PrintOffsetYMm", PrintOffsetYMm.ToString("0.##", CultureInfo.InvariantCulture)),
                     new XElement("SettingsVersion", 2),
                     new XElement("TextAlign", (int)TextAlign),
                     new XElement("LastFolder", Safe(LastFolder)),
@@ -253,10 +263,12 @@ namespace EasyLabel.Core
             if (BarcodeHeightPercent > 130) BarcodeHeightPercent = 130;
             if (QrSizePercent < 70) QrSizePercent = 70;
             if (QrSizePercent > 130) QrSizePercent = 130;
-            MarginTopMm = ClampMargin(MarginTopMm);
-            MarginBottomMm = ClampMargin(MarginBottomMm);
-            MarginLeftMm = ClampMargin(MarginLeftMm);
-            MarginRightMm = ClampMargin(MarginRightMm);
+            MarginTopMm = ClampMargin(MarginTopMm, RenderOptions.MarginMinMm);
+            MarginLeftMm = ClampMargin(MarginLeftMm, RenderOptions.MarginMinMm);
+            MarginBottomMm = ClampMargin(MarginBottomMm, 0);
+            MarginRightMm = ClampMargin(MarginRightMm, 0);
+            PrintOffsetXMm = ClampMargin(PrintOffsetXMm, RenderOptions.MarginMinMm);
+            PrintOffsetYMm = ClampMargin(PrintOffsetYMm, RenderOptions.MarginMinMm);
             SettingsVersion = 2;
             if (string.IsNullOrWhiteSpace(DefaultLabel)) DefaultLabel = LabelSpec.Label40x15.Name;
             if (NetworkHost == null) NetworkHost = "";
@@ -298,6 +310,8 @@ namespace EasyLabel.Core
                 MarginBottomMm = MarginBottomMm,
                 MarginLeftMm = MarginLeftMm,
                 MarginRightMm = MarginRightMm,
+                OffsetXMm = PrintOffsetXMm,
+                OffsetYMm = PrintOffsetYMm,
                 FontSizeMm = DefaultFontSizeMm,
                 FontFamily = DefaultFontFamily,
                 Bold = DefaultBold,
@@ -306,10 +320,11 @@ namespace EasyLabel.Core
             };
         }
 
-        private static double ClampMargin(double value)
+        private static double ClampMargin(double value, double min)
         {
-            if (value < 0) return 0;
-            if (value > 20) return 20;
+            if (double.IsNaN(value) || double.IsInfinity(value)) return 0;
+            if (value < min) return min;
+            if (value > RenderOptions.MarginMaxMm) return RenderOptions.MarginMaxMm;
             return value;
         }
 

@@ -197,6 +197,9 @@ namespace EasyLabel.UI
                 throw new InvalidOperationException("当前页面没有可打印的内容（文字、一维码、二维码都是空的）。");
 
             RenderOptions options = template.CreateRenderOptions(_settings.Dpi);
+            // 打印偏移属于“这台机器”的补偿，不写进模版，但打印时必须带上。
+            options.OffsetXMm = _settings.PrintOffsetXMm;
+            options.OffsetYMm = _settings.PrintOffsetYMm;
             using (RenderedLabel rendered = LabelRenderer.Render(spec, content, options))
             {
                 string comment = "EasyLabel " +
@@ -311,8 +314,8 @@ namespace EasyLabel.UI
             _singleLayoutPlan = template.LayoutPlan == null ? null : template.LayoutPlan.Clone();
             if (_singleLayoutPlan != null)
             {
-                _singleLayoutPlan.Normalize(spec, LayoutPlan.ContentBox(spec,
-                    template.MarginLeftMm, template.MarginTopMm, template.MarginRightMm, template.MarginBottomMm));
+                _singleLayoutPlan.Normalize(spec, LayoutPlan.AllowBox(spec,
+                    template.MarginLeftMm, template.MarginTopMm));
             }
 
             UpdateSingleControlStates();
@@ -347,7 +350,8 @@ namespace EasyLabel.UI
                 _batchCopies.Value = ClampValue(_batchCopies, template.Copies);
 
                 _batchLayoutPlan = template.LayoutPlan == null ? null : template.LayoutPlan.Clone();
-                if (_batchLayoutPlan != null) _batchLayoutPlan.Normalize(spec);
+                if (_batchLayoutPlan != null)
+                    _batchLayoutPlan.Normalize(spec, LayoutPlan.AllowBox(spec, template.MarginLeftMm, template.MarginTopMm));
             }
             finally
             {

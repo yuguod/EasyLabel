@@ -127,6 +127,8 @@ namespace EasyLabel.UI
                 {
                     LabelSpec spec = template.GetSpec();
                     RenderOptions options = template.CreateRenderOptions(_settings.Dpi);
+                    options.OffsetXMm = _settings.PrintOffsetXMm;
+                    options.OffsetYMm = _settings.PrintOffsetYMm;
                     using (RenderedLabel rendered = LabelRenderer.Render(spec, template.CreateContent(), options))
                     {
                         zpl = ZplBuilder.BuildLabel(spec, rendered, _settings.CreatePrintOptions(), jobName, copies);

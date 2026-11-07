@@ -91,5 +91,38 @@ Shot $editor (Join-Path $OutDir 'layout-editor.png')
 Write-Host ("布局编辑：" + $editor.Width + "x" + $editor.Height)
 $editor.Close(); $editor.Dispose()
 
+# 越界布局：元素拖到标签外时应该有红色斜纹 + 画布四周留出 8 mm 可拖区。
+$planOut = New-Object EasyLabel.Core.LayoutPlan
+$planOut.Text = New-Object System.Drawing.RectangleF(-4, 1, 40, 6)
+$opts2 = New-Object EasyLabel.Core.RenderOptions
+$opts2.Dpi = 203
+$opts2.LayoutMode = [EasyLabel.Core.LayoutMode]::TextBarcode
+$opts2.LayoutPlan = $planOut
+$content2 = New-Object EasyLabel.Core.LabelContent
+$content2.Text = "越界测试 OFFSET"
+$content2.ShowBarcode = $true
+$content2.BarcodeValue = "B-2026-002"
+$editor2 = New-Object EasyLabel.UI.LayoutEditorDialog($spec, $content2, $opts2)
+Shot $editor2 (Join-Path $OutDir 'layout-editor-overflow.png')
+Write-Host ("越界布局：" + $editor2.Width + "x" + $editor2.Height)
+$editor2.Close(); $editor2.Dispose()
+
+# 打印机设置页：检查“打印偏移补偿”卡片的排版有没有被裁切。
+$main = [Activator]::CreateInstance([EasyLabel.UI.MainForm], @(0, $false, $false))
+$pagesField = [EasyLabel.UI.MainForm].GetField('_pages', [System.Reflection.BindingFlags]'Instance,NonPublic')
+$pages = $pagesField.GetValue($main)
+$hostForm = New-Object System.Windows.Forms.Form
+$hostForm.ClientSize = New-Object System.Drawing.Size(1000, 1180)
+$settingsPage = $pages[2]
+$settingsPage.Visible = $true
+$settingsPage.Dock = [System.Windows.Forms.DockStyle]::Fill
+$hostForm.Controls.Add($settingsPage)
+$settingsPage.PerformLayout()
+Shot $hostForm (Join-Path $OutDir 'settings-page.png')
+Write-Host ("设置页：" + $hostForm.Width + "x" + $hostForm.Height)
+$hostForm.Controls.Remove($settingsPage)
+$hostForm.Dispose()
+$main.Dispose()
+
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("截图已保存：" + $OutDir) -ForegroundColor Green

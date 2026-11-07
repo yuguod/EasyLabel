@@ -317,7 +317,7 @@ namespace EasyLabel.UI
             UiKit.AddRow(lt, 2, "文字对齐", _singleTextAlign);
             _singleTextAlign.Anchor = AnchorStyles.Left;
 
-            _singleMarginTop = UiKit.Numeric(0, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
+            _singleMarginTop = UiKit.Numeric(-20, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
             _singleMarginTop.ValueChanged += (s, e) => SchedulePreview();
             UiKit.AddRow(lt, 3, "上边距 mm", _singleMarginTop);
             _singleMarginTop.Anchor = AnchorStyles.Left;
@@ -327,7 +327,7 @@ namespace EasyLabel.UI
             UiKit.AddRow(lt, 4, "下边距 mm", _singleMarginBottom);
             _singleMarginBottom.Anchor = AnchorStyles.Left;
 
-            _singleMarginLeft = UiKit.Numeric(0, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
+            _singleMarginLeft = UiKit.Numeric(-20, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
             _singleMarginLeft.ValueChanged += (s, e) => SchedulePreview();
             UiKit.AddRow(lt, 5, "左边距 mm", _singleMarginLeft);
             _singleMarginLeft.Anchor = AnchorStyles.Left;
@@ -347,7 +347,7 @@ namespace EasyLabel.UI
             UiKit.AddRow(lt, 8, "二维码 %", _singleQrScale);
             _singleQrScale.Anchor = AnchorStyles.Left;
 
-            var note = Theme.Label("对齐决定文字在文字框内的水平位置；四边距独立。", 8.2f, Theme.Muted);
+            var note = Theme.Label("对齐决定文字在文字框内的水平位置；四边距独立，上/左边距可填负数（内容整体上移/左移）。", 8.2f, Theme.Muted);
             note.AutoSize = false;
             note.Dock = DockStyle.Fill;
             note.MinimumSize = new Size(0, 28);

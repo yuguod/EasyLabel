@@ -224,6 +224,8 @@ namespace EasyLabel.UI
             {
                 LabelContent content = _template.CreateContent();
                 RenderOptions options = _template.CreateRenderOptions(_settings.Dpi);
+                options.OffsetXMm = _settings.PrintOffsetXMm;
+                options.OffsetYMm = _settings.PrintOffsetYMm;
                 if (!content.HasText && !content.HasBarcode && !content.HasQr)
                 {
                     view.SetPlaceholder("该模版只保存了版式，没有示例内容\r\n打开后输入文字即可");

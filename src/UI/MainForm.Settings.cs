@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
@@ -35,6 +35,8 @@ namespace EasyLabel.UI
         private NumericUpDown _settingsMarginRight;
         private NumericUpDown _settingsBarcodeScale;
         private NumericUpDown _settingsQrScale;
+        private NumericUpDown _offsetX;
+        private NumericUpDown _offsetY;
         private Button _testPrint;
         private CheckBox _autoCheckUpdate;
         private TextBox _updateFeed;
@@ -49,6 +51,7 @@ namespace EasyLabel.UI
 
             BuildPrinterCard(flow);
             BuildPrintCard(flow);
+            BuildOffsetCard(flow);
             BuildDefaultsCard(flow);
             BuildUpdateCard(flow);
             BuildMaintenanceCard(flow);
@@ -215,6 +218,51 @@ namespace EasyLabel.UI
             card.Content.Controls.Add(table);
         }
 
+        /// <summary>
+        /// 打印偏移补偿：整幅内容按 mm 平移。打印机机械起始位置、非打印区、
+        /// 标签在纸上的贴偏都是固定值，用这里的 X/Y 一次性抵消，比反复改边距更直观。
+        /// </summary>
+        private void BuildOffsetCard(FlowLayoutPanel flow)
+        {
+            var card = AddCard(flow, "打印偏移补偿", 214);
+            var table = UiKit.FormTable(4);
+
+            _offsetX = UiKit.Numeric(-20, 20, (decimal)_settings.PrintOffsetXMm, 1, 0.1m);
+            _offsetX.ValueChanged += (s, e) =>
+            {
+                if (_loadingUi) return;
+                _settings.PrintOffsetXMm = (double)_offsetX.Value;
+                ScheduleOffsetPreview();
+            };
+            UiKit.AddRow(table, 0, "X 偏移 mm", _offsetX);
+
+            _offsetY = UiKit.Numeric(-20, 20, (decimal)_settings.PrintOffsetYMm, 1, 0.1m);
+            _offsetY.ValueChanged += (s, e) =>
+            {
+                if (_loadingUi) return;
+                _settings.PrintOffsetYMm = (double)_offsetY.Value;
+                ScheduleOffsetPreview();
+            };
+            UiKit.AddRow(table, 1, "Y 偏移 mm", _offsetY);
+
+            var hint = Theme.Label("正数往右/往下，负数往左/往上；整幅内容一起挪，超出标签的部分会被裁掉。\r\n" +
+                                   "先打一张测试页量一下差多少，再填这里；不要和边距、布局里的拖动重复补偿。", 8.4f, Theme.Muted);
+            hint.AutoSize = false;
+            hint.Dock = DockStyle.Fill;
+            hint.MinimumSize = new Size(0, 52);
+            table.Controls.Add(hint, 0, 2);
+            table.SetColumnSpan(hint, 2);
+
+            card.Content.Controls.Add(table);
+        }
+
+        /// <summary>偏移只影响渲染，改完直接重画两张预览即可。</summary>
+        private void ScheduleOffsetPreview()
+        {
+            UpdateSinglePreview();
+            UpdateBatchPreview();
+        }
+
         private void BuildDefaultsCard(FlowLayoutPanel flow)
         {
             var card = AddCard(flow, "默认版式", 680);
@@ -251,13 +299,13 @@ namespace EasyLabel.UI
             table.Controls.Add(_settingsBold, 0, 6);
             table.SetColumnSpan(_settingsBold, 2);
 
-            _settingsMarginTop = UiKit.Numeric(0, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
+            _settingsMarginTop = UiKit.Numeric(-20, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
             UiKit.AddRow(table, 7, "上边距 mm", _settingsMarginTop);
 
             _settingsMarginBottom = UiKit.Numeric(0, 20, (decimal)_settings.MarginBottomMm, 1, 0.1m);
             UiKit.AddRow(table, 8, "下边距 mm", _settingsMarginBottom);
 
-            _settingsMarginLeft = UiKit.Numeric(0, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
+            _settingsMarginLeft = UiKit.Numeric(-20, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
             UiKit.AddRow(table, 9, "左边距 mm", _settingsMarginLeft);
 
             _settingsMarginRight = UiKit.Numeric(0, 20, (decimal)_settings.MarginRightMm, 1, 0.1m);
@@ -422,10 +470,12 @@ namespace EasyLabel.UI
                 _defaultQrCombo.SelectedIndex = (int)_settings.DefaultQrEcc;
                 _settingsShowHri.Checked = _settings.ShowBarcodeText;
                 _alignCombo.SelectedIndex = (int)_settings.TextAlign;
-                _settingsMarginTop.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginTopMm));
+                _settingsMarginTop.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.MarginTopMm));
                 _settingsMarginBottom.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginBottomMm));
-                _settingsMarginLeft.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginLeftMm));
+                _settingsMarginLeft.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.MarginLeftMm));
                 _settingsMarginRight.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginRightMm));
+                if (_offsetX != null) _offsetX.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.PrintOffsetXMm));
+                if (_offsetY != null) _offsetY.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.PrintOffsetYMm));
                 UiKit.SelectFontFamily(_settingsFontFamily, _settings.DefaultFontFamily);
                 UiKit.SelectFontSize(_settingsFontSize, _settings.DefaultFontSizeMm);
                 _settingsBold.Checked = _settings.DefaultBold;
@@ -473,6 +523,8 @@ namespace EasyLabel.UI
             _settings.MarginBottomMm = (double)_settingsMarginBottom.Value;
             _settings.MarginLeftMm = (double)_settingsMarginLeft.Value;
             _settings.MarginRightMm = (double)_settingsMarginRight.Value;
+            if (_offsetX != null) _settings.PrintOffsetXMm = (double)_offsetX.Value;
+            if (_offsetY != null) _settings.PrintOffsetYMm = (double)_offsetY.Value;
             _settings.DefaultFontFamily = UiKit.GetFontFamily(_settingsFontFamily);
             _settings.DefaultFontSizeMm = UiKit.GetFontSizeMm(_settingsFontSize);
             _settings.DefaultBold = _settingsBold.Checked;
@@ -646,13 +698,13 @@ namespace EasyLabel.UI
                 if (_singleTextAlign != null) _singleTextAlign.SetValueSilent(_settings.TextAlign);
                 if (_batchTextAlign != null) _batchTextAlign.SelectedIndex = (int)_settings.TextAlign;
 
-                if (_singleMarginTop != null) _singleMarginTop.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginTopMm));
+                if (_singleMarginTop != null) _singleMarginTop.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.MarginTopMm));
                 if (_singleMarginBottom != null) _singleMarginBottom.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginBottomMm));
-                if (_singleMarginLeft != null) _singleMarginLeft.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginLeftMm));
+                if (_singleMarginLeft != null) _singleMarginLeft.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.MarginLeftMm));
                 if (_singleMarginRight != null) _singleMarginRight.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginRightMm));
-                if (_batchMarginTop != null) _batchMarginTop.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginTopMm));
+                if (_batchMarginTop != null) _batchMarginTop.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.MarginTopMm));
                 if (_batchMarginBottom != null) _batchMarginBottom.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginBottomMm));
-                if (_batchMarginLeft != null) _batchMarginLeft.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginLeftMm));
+                if (_batchMarginLeft != null) _batchMarginLeft.Value = (decimal)Math.Max(-20, Math.Min(20, _settings.MarginLeftMm));
                 if (_batchMarginRight != null) _batchMarginRight.Value = (decimal)Math.Max(0, Math.Min(20, _settings.MarginRightMm));
                 if (_singleBarcodeScale != null) _singleBarcodeScale.Value = Math.Max(70, Math.Min(130, _settings.BarcodeHeightPercent));
                 if (_batchBarcodeScale != null) _batchBarcodeScale.Value = Math.Max(70, Math.Min(130, _settings.BarcodeHeightPercent));

@@ -67,6 +67,8 @@ namespace EasyLabel.Core
                     parts.Add("一维码 " + BarcodeScale + " 点/模块");
                 if (ShowQr && Qr != null)
                     parts.Add("QR v" + Qr.Version + " / " + QrScale + " 点/模块");
+                if (Options.HasOffset)
+                    parts.Add("偏移 X " + Options.OffsetXMm.ToString("0.0") + " / Y " + Options.OffsetYMm.ToString("0.0") + " mm");
                 return string.Join(" · ", parts.ToArray());
             }
         }
@@ -172,16 +174,31 @@ namespace EasyLabel.Core
             return ClampRect(r);
         }
 
+        /// <summary>
+        /// 兜底裁剪。标签外的坐标是合法用法——负边距、打印偏移、手动把元素拖出边界
+        /// 都属于“故意越界”，超出标签的部分由位图自然裁掉；这里只挡住 NaN / 无穷
+        /// 和明显离谱的数值（例如手改坏了的模版），免得后续排版计算崩掉。
+        /// </summary>
         private RectangleF ClampRect(RectangleF r)
         {
-            float left = Math.Max(0, r.Left);
-            float top = Math.Max(0, r.Top);
-            float right = Math.Min(LabelRect.Right, r.Right);
-            float bottom = Math.Min(LabelRect.Bottom, r.Bottom);
-            if (right < left) right = left;
-            if (bottom < top) bottom = top;
-            return RectangleF.FromLTRB(left, top, right, bottom);
+            if (float.IsNaN(r.X) || float.IsNaN(r.Y) || float.IsNaN(r.Width) || float.IsNaN(r.Height) ||
+                float.IsInfinity(r.X) || float.IsInfinity(r.Y) || float.IsInfinity(r.Width) || float.IsInfinity(r.Height))
+            {
+                return RectangleF.Empty;
+            }
+            if (r.Width < 0) r.Width = 0;
+            if (r.Height < 0) r.Height = 0;
+            float limit = LabelRect.Width + Options.MmToPx(OverflowLimitMm);
+            float limitV = LabelRect.Height + Options.MmToPx(OverflowLimitMm);
+            if (r.Left < -Options.MmToPx(OverflowLimitMm)) r.X = -Options.MmToPx(OverflowLimitMm);
+            if (r.Top < -Options.MmToPx(OverflowLimitMm)) r.Y = -Options.MmToPx(OverflowLimitMm);
+            if (r.Width > limit * 2) r.Width = limit * 2;
+            if (r.Height > limitV * 2) r.Height = limitV * 2;
+            return r;
         }
+
+        /// <summary>越界坐标的硬上限（mm），只用于防止坏数据，不是编辑约束。</summary>
+        private const float OverflowLimitMm = 60f;
 
         private static RectangleF EmptyRect
         {
@@ -191,10 +208,11 @@ namespace EasyLabel.Core
         private void ApplyLayoutPlan(LayoutPlan source)
         {
             LayoutPlan plan = source.Clone();
-            // 自定义布局的坐标以安全区为原点，所以这里先把元素夹进安全区，
-            // 再加上边距偏到标签上——改边距时版式会跟着内缩，不会再出现“设了没反应”。
+            // 自定义布局的坐标以安全区为原点，所以这里先按“安全区 + 允许越界范围”归整，
+            // 再加上边距偏到标签上——改边距时版式会跟着内缩，不会再出现“设了没反应”；
+            // 而故意拖到标签外的元素也能保留，不会被硬拉回边界内。
             RectangleF safe = LayoutPlan.ContentBox(Spec, Options);
-            plan.Normalize(Spec, safe);
+            plan.Normalize(Spec, LayoutPlan.AllowBox(Spec, Options));
             float mL = (float)Options.MarginLeftMm;
             float mT = (float)Options.MarginTopMm;
 
@@ -263,10 +281,12 @@ namespace EasyLabel.Core
             double mB = Options.MarginBottomMm;
             double W = Spec.WidthMm;
             double H = Spec.HeightMm;
+            // 负的左边距/上边距按“纯平移”处理：可用尺寸不变，整体往左/往上挪。
+            // 如果直接拿 mL 参与减法，负边距会把内容区放大，版式被拉伸，补偿就不准了。
             double x0 = mL;
             double y0 = mT;
-            double cw = W - mL - mR;
-            double ch = H - mT - mB;
+            double cw = W - Math.Max(0, mL) - Math.Max(0, mR);
+            double ch = H - Math.Max(0, mT) - Math.Max(0, mB);
             if (cw < 3 || ch < 3)
             {
                 Errors.Add("上下左右边距过大，标签内没有可用空间");

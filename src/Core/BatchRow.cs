@@ -18,6 +18,10 @@ namespace EasyLabel.Core
         public double MarginBottomMm { get; set; }
         public double MarginLeftMm { get; set; }
         public double MarginRightMm { get; set; }
+
+        /// <summary>打印偏移补偿（mm），整批统一用设置里的值。</summary>
+        public double OffsetXMm { get; set; }
+        public double OffsetYMm { get; set; }
         public double FontSizeMm { get; set; }
         public string FontFamily { get; set; }
         public bool Bold { get; set; }
@@ -63,6 +67,8 @@ namespace EasyLabel.Core
                 MarginBottomMm = MarginBottomMm,
                 MarginLeftMm = MarginLeftMm,
                 MarginRightMm = MarginRightMm,
+                OffsetXMm = OffsetXMm,
+                OffsetYMm = OffsetYMm,
                 FontSizeMm = FontSizeMm,
                 FontFamily = FontFamily,
                 Bold = Bold,

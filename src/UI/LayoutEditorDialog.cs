@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -204,8 +204,8 @@ namespace EasyLabel.UI
 
             // ---- 位置与尺寸 ----
             add(SectionTitle("位置与尺寸（相对安全区，mm）"));
-            _numX = SideNumeric(0, 400);
-            _numY = SideNumeric(0, 400);
+            _numX = SideNumeric(-20, 400);
+            _numY = SideNumeric(-20, 400);
             _numW = SideNumeric(0.5m, 400);
             _numH = SideNumeric(0.5m, 400);
             add(PairTable("X", _numX, "Y", _numY));
@@ -244,9 +244,9 @@ namespace EasyLabel.UI
 
             // ---- 安全区（边距）----
             add(SectionTitle("安全区（边距 mm）"));
-            _numMT = SideNumeric(0, 20);
+            _numMT = SideNumeric(-20, 20);
             _numMB = SideNumeric(0, 20);
-            _numML = SideNumeric(0, 20);
+            _numML = SideNumeric(-20, 20);
             _numMR = SideNumeric(0, 20);
             add(PairTable("上", _numMT, "下", _numMB));
             add(PairTable("左", _numML, "右", _numMR));
@@ -255,7 +255,7 @@ namespace EasyLabel.UI
             _numML.ValueChanged += (s, e) => ApplyMargins();
             _numMR.ValueChanged += (s, e) => ApplyMargins();
 
-            var marginHint = Theme.Label("安全区 = 打印时避开边距的可用区域，浅色部分就是边距。\n元素可以拖到浅色区，但应用后会被夹回安全区。", 8.1f, Theme.Muted);
+            var marginHint = Theme.Label("安全区 = 标签去掉边距后的区域，浅色部分就是边距。\n上/左边距可以填负数，等于把内容整体往左/上挪。", 8.1f, Theme.Muted);
             marginHint.AutoSize = false;
             marginHint.Dock = DockStyle.Top;
             marginHint.Height = Theme.S(40);
@@ -305,7 +305,7 @@ namespace EasyLabel.UI
             history.Controls.Add(_redo);
             add(history);
 
-            var keys = Theme.Label("方向键 0.1 mm 微调，Shift + 方向键 1 mm；\nCtrl+Z 撤销，Ctrl+Y 重做。", 8.1f, Theme.Muted);
+            var keys = Theme.Label("元素可以拖到标签外（最多 8 mm），红色斜纹部分\n打印时会被裁掉；方向键 0.1 mm，Shift 1 mm。", 8.1f, Theme.Muted);
             keys.AutoSize = false;
             keys.Dock = DockStyle.Top;
             keys.Height = Theme.S(34);
@@ -604,13 +604,22 @@ namespace EasyLabel.UI
             get { return LayoutPlan.ContentBox(_spec, _mL, _mT, _mR, _mB); }
         }
 
+        /// <summary>
+        /// 可放置区域：安全区各边再放出 <see cref="LayoutPlan.OverflowMm"/>，
+        /// 所以元素能拖到标签外面——这是手动补偿打印机偏移的一种办法。
+        /// </summary>
+        public RectangleF AllowArea
+        {
+            get { return LayoutPlan.AllowBox(_spec, _mL, _mT); }
+        }
+
         public void SetMargins(double left, double top, double right, double bottom)
         {
-            _mL = Math.Max(0, Math.Min(20, left));
-            _mT = Math.Max(0, Math.Min(20, top));
-            _mR = Math.Max(0, Math.Min(20, right));
-            _mB = Math.Max(0, Math.Min(20, bottom));
-            _plan.Normalize(_spec, SafeArea);
+            _mL = Math.Max(RenderOptions.MarginMinMm, Math.Min(RenderOptions.MarginMaxMm, left));
+            _mT = Math.Max(RenderOptions.MarginMinMm, Math.Min(RenderOptions.MarginMaxMm, top));
+            _mR = Math.Max(0, Math.Min(RenderOptions.MarginMaxMm, right));
+            _mB = Math.Max(0, Math.Min(RenderOptions.MarginMaxMm, bottom));
+            _plan.Normalize(_spec, AllowArea);
             Invalidate();
             RaiseStatus();
         }
@@ -618,7 +627,7 @@ namespace EasyLabel.UI
         public void SetPlan(LayoutPlan plan)
         {
             _plan = plan ?? new LayoutPlan();
-            _plan.Normalize(_spec, SafeArea);
+            _plan.Normalize(_spec, AllowArea);
             PlanTouched = false;
             Invalidate();
             RaiseStatus();
@@ -632,12 +641,12 @@ namespace EasyLabel.UI
         public void SetSelectedRect(RectangleF rect)
         {
             if (_selected == LayoutElement.None) return;
-            RectangleF area = SafeArea;
+            RectangleF area = AllowArea;
             float minSize = _selected == LayoutElement.Text ? 2f : (_selected == LayoutElement.Barcode ? 4f : 3f);
             float w = Clamp(rect.Width, minSize, area.Width);
             float h = Clamp(rect.Height, minSize, area.Height);
-            float x = Clamp(rect.X, 0, area.Width - w);
-            float y = Clamp(rect.Y, 0, area.Height - h);
+            float x = Clamp(rect.X, area.Left, area.Right - w);
+            float y = Clamp(rect.Y, area.Top, area.Bottom - h);
             SetRect(_selected, new RectangleF(x, y, w, h));
             PlanTouched = true;
             Invalidate();
@@ -694,11 +703,24 @@ namespace EasyLabel.UI
         {
             RectangleF area = SafeArea;
             string safe = "安全区 " + area.Width.ToString("0.0") + " × " + area.Height.ToString("0.0") + " mm";
-            if (_selected == LayoutElement.None) return safe + " · 请选择元素，拖动移动，拖角点缩放。";
+            if (_selected == LayoutElement.None) return safe + " · 请选择元素，拖动移动，拖角点缩放；可拖出标签边界。";
             RectangleF r = GetRect(_selected);
             string name = _selected == LayoutElement.Text ? "文字" : (_selected == LayoutElement.Barcode ? "一维码" : "二维码");
+            string outside = IsOutsideLabel(r) ? "    ·    超出标签，打印会被裁掉" : "";
             return name + "  X " + r.X.ToString("0.0") + "  Y " + r.Y.ToString("0.0") +
-                   "  宽 " + r.Width.ToString("0.0") + "  高 " + r.Height.ToString("0.0") + " mm    ·    " + safe;
+                   "  宽 " + r.Width.ToString("0.0") + "  高 " + r.Height.ToString("0.0") + " mm    ·    " + safe + outside;
+        }
+
+        /// <summary>元素是否越出了标签可见区域（坐标是相对安全区的，这里换算回标签再看）。</summary>
+        private bool IsOutsideLabel(RectangleF r)
+        {
+            if (r.Width <= 0 || r.Height <= 0) return false;
+            float left = (float)-_mL;
+            float top = (float)-_mT;
+            float right = left + (float)_spec.WidthMm;
+            float bottom = top + (float)_spec.HeightMm;
+            return r.Left < left - 0.05f || r.Top < top - 0.05f ||
+                   r.Right > right + 0.05f || r.Bottom > bottom + 0.05f;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -708,9 +730,13 @@ namespace EasyLabel.UI
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(BackColor);
 
-            float availableW = Math.Max(80, Width - Theme.S(56));
-            float availableH = Math.Max(60, Height - Theme.S(44));
-            _scale = Math.Min(availableW / (float)_spec.WidthMm, availableH / (float)_spec.HeightMm);
+            // 画布给标签四周留出 8 mm 的越界区，元素拖出去也能看见；
+            // 所以缩放要按“标签 + 两侧留白”来算，否则拖出去的部分会被画布边缘挡掉。
+            float overflow = LayoutPlan.OverflowMm;
+            float availableW = Math.Max(80, Width - Theme.S(40));
+            float availableH = Math.Max(60, Height - Theme.S(36));
+            _scale = Math.Min(availableW / ((float)_spec.WidthMm + 2 * overflow),
+                              availableH / ((float)_spec.HeightMm + 2 * overflow));
             if (_scale > 48f) _scale = 48f;
             if (_scale < 1f) _scale = 1f;
             float w = (float)_spec.WidthMm * _scale;
@@ -719,8 +745,19 @@ namespace EasyLabel.UI
             float y = (Height - h) / 2f;
             _labelRect = new RectangleF(x, y, w, h);
 
+            // 越界区底纹：一眼能看出“拖到这里就会超出标签”。
+            var overflowRect = new RectangleF(x - overflow * _scale, y - overflow * _scale,
+                w + 2 * overflow * _scale, h + 2 * overflow * _scale);
+            using (var band = new SolidBrush(Color.FromArgb(246, 243, 238)))
+                g.FillRectangle(band, overflowRect);
+            using (var bandPen = new Pen(Color.FromArgb(90, 176, 160, 140), 1f))
+            {
+                bandPen.DashStyle = DashStyle.Dot;
+                g.DrawRectangle(bandPen, overflowRect.X, overflowRect.Y, overflowRect.Width, overflowRect.Height);
+            }
+
             using (var shadow = new SolidBrush(Color.FromArgb(26, 0, 0, 0)))
-                g.FillRectangle(shadow, x + Theme.S(6), y + Theme.S(6), w, h);
+                g.FillRectangle(shadow, x + Theme.S(4), y + Theme.S(4), w, h);
             using (var white = new SolidBrush(Color.White))
                 g.FillRectangle(white, _labelRect);
 
@@ -732,6 +769,9 @@ namespace EasyLabel.UI
                 preview.MarginTopMm = _mT;
                 preview.MarginRightMm = _mR;
                 preview.MarginBottomMm = _mB;
+                // 打印偏移是“补偿打印机”的，编辑时清零，否则整幅内容跟着偏，坐标就对不上了。
+                preview.OffsetXMm = 0;
+                preview.OffsetYMm = 0;
                 preview.LayoutPlan = _plan.Clone();
                 using (RenderedLabel rendered = LabelRenderer.Render(_spec, _content, preview))
                 {
@@ -771,16 +811,24 @@ namespace EasyLabel.UI
             using (var shade = new SolidBrush(Color.FromArgb(20, 70, 90, 140)))
             {
                 // 安全区之外（= 边距）铺一层浅色，边距吃了多少空间一眼可见。
-                g.FillRectangle(shade, _labelRect.Left, _labelRect.Top, _labelRect.Width, area.Top - _labelRect.Top);
-                g.FillRectangle(shade, _labelRect.Left, area.Bottom, _labelRect.Width, _labelRect.Bottom - area.Bottom);
-                g.FillRectangle(shade, _labelRect.Left, area.Top, area.Left - _labelRect.Left, area.Height);
-                g.FillRectangle(shade, area.Right, area.Top, _labelRect.Right - area.Right, area.Height);
+                // 负边距会让安全区跑到标签外面，这里只画落在标签内的部分，避免出现反向外框。
+                ShadeBand(g, shade, _labelRect.Left, _labelRect.Top, _labelRect.Width, area.Top - _labelRect.Top);
+                ShadeBand(g, shade, _labelRect.Left, area.Bottom, _labelRect.Width, _labelRect.Bottom - area.Bottom);
+                ShadeBand(g, shade, _labelRect.Left, area.Top, area.Left - _labelRect.Left, area.Height);
+                ShadeBand(g, shade, area.Right, area.Top, _labelRect.Right - area.Right, area.Height);
             }
             using (var pen = new Pen(Color.FromArgb(90, Theme.Accent), 1.2f))
             {
                 pen.DashStyle = DashStyle.Dash;
                 g.DrawRectangle(pen, area.X, area.Y, area.Width, area.Height);
             }
+        }
+
+        /// <summary>只在标签范围内填色，宽高非正时跳过（负边距/大边距都会遇到）。</summary>
+        private static void ShadeBand(Graphics g, Brush brush, float x, float y, float width, float height)
+        {
+            if (width <= 0.5f || height <= 0.5f) return;
+            g.FillRectangle(brush, x, y, width, height);
         }
 
         private void DrawGrid(Graphics g)
@@ -790,6 +838,8 @@ namespace EasyLabel.UI
             using (var minor = new Pen(Color.FromArgb(26, 60, 80, 120), 1f))
             using (var major = new Pen(Color.FromArgb(50, 60, 80, 120), 1f))
             {
+                GraphicsState state = g.Save();
+                g.SetClip(_labelRect, CombineMode.Intersect);
                 for (float mm = GridStep; mm < SafeArea.Width - 0.001f; mm += GridStep)
                 {
                     float px = area.Left + mm * _scale;
@@ -800,6 +850,7 @@ namespace EasyLabel.UI
                     float py = area.Top + mm * _scale;
                     g.DrawLine(IsMajor(mm) ? major : minor, area.Left, py, area.Right, py);
                 }
+                g.Restore(state);
             }
         }
 
@@ -821,6 +872,8 @@ namespace EasyLabel.UI
                 pen.DashStyle = selected ? DashStyle.Solid : DashStyle.Dash;
                 g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
             }
+            // 越出标签的部分打印时会被裁掉，用红色斜纹标出来，避免“看着有、打不出来”。
+            DrawOutsideTint(g, r);
             using (var font = Theme.Ui(8.2f))
             {
                 // 元素框里的内容经常是深色条码/文字，标题加一层白底才不会糊在一起。
@@ -856,6 +909,27 @@ namespace EasyLabel.UI
                     TextRenderer.DrawText(g, size, font, new Point(box.X + 2, box.Y), color,
                         TextFormatFlags.NoPadding);
                 }
+            }
+        }
+
+        /// <summary>把元素落在标签外的部分用红色斜纹盖住：这些内容打印时会被裁掉。</summary>
+        private void DrawOutsideTint(Graphics g, RectangleF r)
+        {
+            if (r.Width <= 0 || r.Height <= 0) return;
+            if (r.Left >= _labelRect.Left && r.Right <= _labelRect.Right &&
+                r.Top >= _labelRect.Top && r.Bottom <= _labelRect.Bottom) return;
+
+            using (var region = new Region(r))
+            {
+                region.Exclude(_labelRect);
+                GraphicsState state = g.Save();
+                g.SetClip(region, CombineMode.Replace);
+                using (var hatch = new HatchBrush(HatchStyle.WideUpwardDiagonal,
+                    Color.FromArgb(190, 206, 66, 66), Color.FromArgb(70, 214, 120, 120)))
+                {
+                    g.FillRectangle(hatch, r);
+                }
+                g.Restore(state);
             }
         }
 
@@ -947,23 +1021,24 @@ namespace EasyLabel.UI
             float dx = (e.X - _dragStart.X) / _scale;
             float dy = (e.Y - _dragStart.Y) / _scale;
             RectangleF area = SafeArea;
+            RectangleF allow = AllowArea;
             RectangleF rect;
 
             if (_grip == Grip.Move)
             {
                 rect = _dragRect;
-                rect.X = Clamp(SnapEdge(_dragRect.X + dx, (float)area.Width - _dragRect.Width), 0,
-                    Math.Max(0, (float)area.Width - _dragRect.Width));
-                rect.Y = Clamp(SnapEdge(_dragRect.Y + dy, (float)area.Height - _dragRect.Height), 0,
-                    Math.Max(0, (float)area.Height - _dragRect.Height));
+                rect.X = Clamp(SnapEdge(_dragRect.X + dx, (float)area.Width - _dragRect.Width),
+                    allow.Left, Math.Max(allow.Left, allow.Right - _dragRect.Width));
+                rect.Y = Clamp(SnapEdge(_dragRect.Y + dy, (float)area.Height - _dragRect.Height),
+                    allow.Top, Math.Max(allow.Top, allow.Bottom - _dragRect.Height));
             }
             else if (_selected == LayoutElement.Qr)
             {
-                rect = ResizeSquare(_dragRect, dx, dy, area);
+                rect = ResizeSquare(_dragRect, dx, dy, allow, area);
             }
             else
             {
-                rect = ResizeFree(_dragRect, dx, dy, area, _selected == LayoutElement.Text ? 2f : 4f);
+                rect = ResizeFree(_dragRect, dx, dy, allow, area, _selected == LayoutElement.Text ? 2f : 4f);
             }
 
             if (rect != _dragRect && !_dragUndoPushed)
@@ -1007,10 +1082,10 @@ namespace EasyLabel.UI
             else return;
 
             PushUndo();
-            RectangleF area = SafeArea;
+            RectangleF allow = AllowArea;
             RectangleF r = GetRect(_selected);
-            r.X = Clamp(r.X + dx, 0, Math.Max(0, (float)area.Width - r.Width));
-            r.Y = Clamp(r.Y + dy, 0, Math.Max(0, (float)area.Height - r.Height));
+            r.X = Clamp(r.X + dx, allow.Left, Math.Max(allow.Left, allow.Right - r.Width));
+            r.Y = Clamp(r.Y + dy, allow.Top, Math.Max(allow.Top, allow.Bottom - r.Height));
             SetRect(_selected, r);
             PlanTouched = true;
             Invalidate();
@@ -1048,7 +1123,11 @@ namespace EasyLabel.UI
             return snapped;
         }
 
-        private RectangleF ResizeFree(RectangleF start, float dx, float dy, RectangleF area, float minSize)
+        /// <summary>
+        /// 自由缩放。夹取范围是 <paramref name="allow"/>（安全区外放 8 mm），
+        /// 吸附目标仍是 <paramref name="safe"/> 的边线，这样“拖出边界”和“对齐安全区”互不干扰。
+        /// </summary>
+        private RectangleF ResizeFree(RectangleF start, float dx, float dy, RectangleF allow, RectangleF safe, float minSize)
         {
             float left = start.Left;
             float top = start.Top;
@@ -1060,27 +1139,27 @@ namespace EasyLabel.UI
             if (_grip == Grip.NW || _grip == Grip.NE) top += dy;
             if (_grip == Grip.SW || _grip == Grip.SE) bottom += dy;
 
-            left = Clamp(left, 0, right - minSize);
-            top = Clamp(top, 0, bottom - minSize);
-            right = Clamp(right, left + minSize, area.Width);
-            bottom = Clamp(bottom, top + minSize, area.Height);
+            left = Clamp(left, allow.Left, right - minSize);
+            top = Clamp(top, allow.Top, bottom - minSize);
+            right = Clamp(right, left + minSize, allow.Right);
+            bottom = Clamp(bottom, top + minSize, allow.Bottom);
 
-            return RectangleF.FromLTRB(SnapLine(left, area.Width), SnapLine(top, area.Height),
-                SnapLine(right, area.Width), SnapLine(bottom, area.Height));
+            return RectangleF.FromLTRB(SnapLine(left, safe.Width), SnapLine(top, safe.Height),
+                SnapLine(right, safe.Width), SnapLine(bottom, safe.Height));
         }
 
-        private RectangleF ResizeSquare(RectangleF start, float dx, float dy, RectangleF area)
+        private RectangleF ResizeSquare(RectangleF start, float dx, float dy, RectangleF allow, RectangleF safe)
         {
             float sx = (_grip == Grip.NE || _grip == Grip.SE) ? dx : -dx;
             float sy = (_grip == Grip.SW || _grip == Grip.SE) ? dy : -dy;
             float size = Math.Max(3f, start.Width + (Math.Abs(sx) >= Math.Abs(sy) ? sx : sy));
-            size = Math.Min(size, Math.Min(area.Width, area.Height));
+            size = Math.Min(size, allow.Height);
             size = LayoutPlan.Snap(size, GridStep);
             if (size < 3f) size = 3f;
             float x = (_grip == Grip.NW || _grip == Grip.SW) ? start.Right - size : start.Left;
             float y = (_grip == Grip.NW || _grip == Grip.NE) ? start.Bottom - size : start.Top;
-            x = Clamp(x, 0, Math.Max(0, area.Width - size));
-            y = Clamp(y, 0, Math.Max(0, area.Height - size));
+            x = Clamp(x, allow.Left, Math.Max(allow.Left, allow.Right - size));
+            y = Clamp(y, allow.Top, Math.Max(allow.Top, allow.Bottom - size));
             return new RectangleF(x, y, size, size);
         }
 

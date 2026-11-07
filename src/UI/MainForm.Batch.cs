@@ -354,7 +354,7 @@ namespace EasyLabel.UI
             UiKit.AddRow(table, 7, "文字对齐", _batchTextAlign);
             _batchTextAlign.Anchor = AnchorStyles.Left;
 
-            _batchMarginTop = UiKit.Numeric(0, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
+            _batchMarginTop = UiKit.Numeric(-20, 20, (decimal)_settings.MarginTopMm, 1, 0.1m);
             _batchMarginTop.ValueChanged += (s, e) => OnBatchOptionsChanged();
             UiKit.AddRow(table, 8, "上边距 mm", _batchMarginTop);
 
@@ -362,7 +362,7 @@ namespace EasyLabel.UI
             _batchMarginBottom.ValueChanged += (s, e) => OnBatchOptionsChanged();
             UiKit.AddRow(table, 9, "下边距 mm", _batchMarginBottom);
 
-            _batchMarginLeft = UiKit.Numeric(0, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
+            _batchMarginLeft = UiKit.Numeric(-20, 20, (decimal)_settings.MarginLeftMm, 1, 0.1m);
             _batchMarginLeft.ValueChanged += (s, e) => OnBatchOptionsChanged();
             UiKit.AddRow(table, 10, "左边距 mm", _batchMarginLeft);
 
@@ -496,6 +496,8 @@ namespace EasyLabel.UI
                 MarginBottomMm = (double)_batchMarginBottom.Value,
                 MarginLeftMm = (double)_batchMarginLeft.Value,
                 MarginRightMm = (double)_batchMarginRight.Value,
+                OffsetXMm = _settings.PrintOffsetXMm,
+                OffsetYMm = _settings.PrintOffsetYMm,
                 FontSizeMm = UiKit.GetFontSizeMm(_batchFontSize),
                 FontFamily = UiKit.GetFontFamily(_batchFontFamily),
                 Bold = _batchBold != null && _batchBold.Checked,

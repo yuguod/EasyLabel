@@ -15,6 +15,14 @@ namespace EasyLabel.Core
         public double MarginBottomMm { get; set; }
         public double MarginLeftMm { get; set; }
         public double MarginRightMm { get; set; }
+
+        /// <summary>
+        /// 打印偏移补偿（mm）：正数把整幅内容往右/往下挪。
+        /// 用来抵消打印机机械起始位置、非打印区或标签在纸上的贴偏——
+        /// 这类偏移每台机器固定，跟版式无关，所以在渲染最后一刻整体平移。
+        /// </summary>
+        public double OffsetXMm { get; set; }
+        public double OffsetYMm { get; set; }
         public double FontSizeMm { get; set; }
         public string FontFamily { get; set; }
         public bool Bold { get; set; }
@@ -50,10 +58,15 @@ namespace EasyLabel.Core
         public void Normalize()
         {
             if (Dpi != 203 && Dpi != 300 && Dpi != 600) Dpi = 600;
-            MarginTopMm = ClampMargin(MarginTopMm);
-            MarginBottomMm = ClampMargin(MarginBottomMm);
-            MarginLeftMm = ClampMargin(MarginLeftMm);
-            MarginRightMm = ClampMargin(MarginRightMm);
+            // 上边距和左边距允许负数：负数等于把内容整体往左/往上挪（超出部分被裁掉），
+            // 这是除了“打印偏移补偿”之外的手动补偿手段。右边距/下边距保持 0 起，
+            // 因为负数会让自动布局越算越大，没有实际用处。
+            MarginTopMm = ClampMargin(MarginTopMm, MarginMinMm);
+            MarginLeftMm = ClampMargin(MarginLeftMm, MarginMinMm);
+            MarginBottomMm = ClampMargin(MarginBottomMm, 0);
+            MarginRightMm = ClampMargin(MarginRightMm, 0);
+            OffsetXMm = ClampMargin(OffsetXMm, MarginMinMm);
+            OffsetYMm = ClampMargin(OffsetYMm, MarginMinMm);
             if (FontSizeMm < 0) FontSizeMm = 0;
             if (FontSizeMm > 0 && FontSizeMm < 1.2) FontSizeMm = 1.2;
             if (FontSizeMm > 10.0) FontSizeMm = 10.0;
@@ -64,11 +77,32 @@ namespace EasyLabel.Core
             if (QrSizePercent > 130) QrSizePercent = 130;
         }
 
-        private static double ClampMargin(double value)
+        /// <summary>边距/偏移允许的最小值（mm）。</summary>
+        public const double MarginMinMm = -20;
+
+        /// <summary>边距/偏移允许的最大值（mm）。</summary>
+        public const double MarginMaxMm = 20;
+
+        private static double ClampMargin(double value, double min)
         {
-            if (value < 0) return 0;
-            if (value > 20) return 20;
+            if (double.IsNaN(value) || double.IsInfinity(value)) return 0;
+            if (value < min) return min;
+            if (value > MarginMaxMm) return MarginMaxMm;
             return value;
+        }
+
+        public bool HasOffset
+        {
+            get { return Math.Abs(OffsetXMm) > 0.004 || Math.Abs(OffsetYMm) > 0.004; }
+        }
+
+        public string OffsetText
+        {
+            get
+            {
+                if (!HasOffset) return "";
+                return "打印偏移 X " + OffsetXMm.ToString("0.0") + " / Y " + OffsetYMm.ToString("0.0") + " mm";
+            }
         }
 
         public double DotsPerMm
