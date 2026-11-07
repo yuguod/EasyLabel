@@ -1,12 +1,12 @@
-# EasyLabel 标签轻松打 v1.10.0
+# EasyLabel 标签轻松打 v1.10.1
 
 Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×20 mm** 和自定义尺寸，单张文本打印、Excel/CSV 批量打印，以及 Code 128 / Code 39 / EAN-13 一维码和 QR 二维码。
 
 程序采用 **ZPL 直发**：把整张标签渲染成 1-bit 点阵，通过 `^GFA` 发送给打印机，不经过 Windows 驱动的页面缩放和重新排版。中文、条码、二维码的预览与实际打印使用同一张位图。
 
 > **直接使用**：到 [Releases](https://github.com/yuguod/EasyLabel/releases) 下载最新版。
-> 推荐 `EasyLabel-1.10.0-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
-> 也可以下载 `EasyLabel-1.10.0-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
+> 推荐 `EasyLabel-1.10.1-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
+> 也可以下载 `EasyLabel-1.10.1-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
 
 ![单张打印](docs/screenshot-single.png)
 
@@ -29,7 +29,7 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 
 ### 安装版
 
-运行 `EasyLabel-1.10.0-Setup.exe`：
+运行 `EasyLabel-1.10.1-Setup.exe`：
 
 1. 安装目录默认 `%LOCALAPPDATA%\Programs\EasyLabel`（当前用户，不需要管理员权限）。也可以改成任意目录；填 `C:\Program Files\...` 时安装程序会自动请求管理员权限，并改为“所有用户”安装（注册表写 HKLM、快捷方式放进公共开始菜单）。
 2. 可选“创建桌面快捷方式”“安装完成后启动”。
@@ -41,8 +41,8 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 无人值守部署（IT 批量装）：
 
 ```bat
-EasyLabel-1.10.0-Setup.exe /S /D="D:\Tools\EasyLabel"
-EasyLabel-1.10.0-Setup.exe /uninstall /S
+EasyLabel-1.10.1-Setup.exe /S /D="D:\Tools\EasyLabel"
+EasyLabel-1.10.1-Setup.exe /uninstall /S
 ```
 
 `/S` 静默安装（默认目录）、`/D=` 指定目录、`/uninstall` 卸载；静默卸载会结束正在运行的程序并保留用户设置。
@@ -51,7 +51,7 @@ EasyLabel-1.10.0-Setup.exe /uninstall /S
 
 三种入口，效果相同：
 
-- 点左侧栏底部的版本号（`v1.10.0 · 安装版`）；
+- 点左侧栏底部的版本号（`v1.10.1 · 安装版`）；
 - “关于 → 检查更新”；
 - 启动时自动检查（默认开启，每天最多一次，可在“打印机设置 → 软件更新”关闭）。
 
@@ -72,7 +72,7 @@ EasyLabel-1.10.0-Setup.exe /uninstall /S
 | 留空 | `api.github.com/repos/yuguod/EasyLabel/releases/latest` |
 | `https://github.com/yuguod/EasyLabel` | 同上（仓库主页） |
 | `https://github.com/yuguod/EasyLabel/releases` | 同上（发布页） |
-| `https://github.com/yuguod/EasyLabel/releases/tag/v1.10.0` | `.../releases/tags/v1.10.0`（指定版本） |
+| `https://github.com/yuguod/EasyLabel/releases/tag/v1.10.1` | `.../releases/tags/v1.10.1`（指定版本） |
 | 其他 URL（如内网 `http://intranet/update.json`） | 原样请求 |
 
 默认地址失败时会自动再试一次仓库里的 `update.json`（两条链路的可达性不同），仍失败才报错。
@@ -85,9 +85,9 @@ EasyLabel-1.10.0-Setup.exe /uninstall /S
 
 ```json
 {
-  "version": "1.10.0",
+  "version": "1.10.1",
   "releaseDate": "2026-11-07",
-  "url": "https://example.com/easylabel/EasyLabel-1.10.0-update.zip",
+  "url": "https://example.com/easylabel/EasyLabel-1.10.1-update.zip",
   "sha256": "（更新包的 SHA-256，小写；留空则跳过校验）",
   "size": 1234567,
   "mandatory": false,
@@ -203,7 +203,7 @@ LICENSES/                   开源许可证全文
 2. 画布会把 **安全区**（标签去掉四边距的区域）用虚线标出来，安全区外面那圈浅色就是边距；网格间距可选 0.5 / 1 / 2 / 5 mm。
 3. 拖动元素边框移动位置；拖动四角的白色方块缩放大小。拖动会吸附网格、安全区边缘和中线，靠近时自动对齐。
 4. 右侧面板可精确输入 **X / Y / 宽 / 高**，或用“贴左 / 水平居中 / 贴右、贴上 / 垂直居中 / 贴下、铺满安全区”一键摆位。
-5. **方向键 0.1 mm 微调，Shift + 方向键 1 mm**；`Ctrl+Z` 撤销、`Ctrl+Y` 重做。
+5. **方向键 0.1 mm 微调，Shift + 方向键 1 mm**；`Ctrl+Z` 撤销、`Ctrl+Y` 重做；**回车 = 保存并关闭，Esc = 取消**。
 6. 右边还能就地改四个边距（上/左可填负数），画布上的安全区会实时跟着变；点“应用布局”后边距会自动回写到页面。
 7. 二维码始终保持正方形；文字框变小时会自动换行/缩小。
 8. 切换标签规格、切换版式，或勾选/取消一维码/二维码时，会回到自动布局，避免旧坐标错位。
@@ -489,9 +489,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 
 - `dist/EasyLabel/EasyLabel.exe`（单文件，依赖已内嵌）
 - `dist/EasyLabel/EasyLabelUpdater.exe`（在线更新的替换程序）
-- `dist/EasyLabel-1.10.0-win64.zip`（绿色版）
-- `dist/EasyLabel-1.10.0-update.zip`（在线更新包）
-- `dist/EasyLabel-1.10.0-Setup.exe`（安装版，更新包已内嵌）
+- `dist/EasyLabel-1.10.1-win64.zip`（绿色版）
+- `dist/EasyLabel-1.10.1-update.zip`（在线更新包）
+- `dist/EasyLabel-1.10.1-Setup.exe`（安装版，更新包已内嵌）
 - `dist/update.json`（更新清单，含 SHA-256 与包大小）
 - 构建脚本会把上述产物同步归档到 `releases/`，以后每个版本都保留，不覆盖旧包。
 
@@ -575,6 +575,8 @@ Copyright © 2026 yuguod. 保留所有权利。
 ---
 
 ## 16. 版本
+
+**v1.10.1** — 修复 **“布局编辑窗口在部分屏幕上看不到‘应用布局’按钮”**：高 DPI（125% / 150%）叠加上 1366×768 这类小屏时，窗口会按缩放放大到比工作区还高，底部按钮栏被顶到屏幕外，看上去就像“批量打印的布局编辑没有保存按钮”。现在窗口显示时会先按当前屏幕工作区收尺寸、夹位置，并把最小尺寸一起压到工作区以内；底栏状态文字也会按剩余宽度收窄，不再压到“重置为自动布局”上。另外补上 **回车 = 保存并关闭、Esc = 取消**。单张页和批量页共用这个窗口，两边都生效。
 
 **v1.10.0** — 新增 **打印偏移补偿**（打印机设置 → X/Y 偏移，−20–20 mm，整幅内容平移，位图级实现，预览与打印一致）；**上边距、左边距支持负数**（负数=内容整体上移/左移，可用尺寸不变，纯平移）；**布局编辑允许元素拖出标签边界**（最多 8 mm，越界部分红色斜纹提示、打印时裁掉，越界坐标会随模版保存）。三处改动合起来解决“打印机固定偏 1–2 mm”的问题；元素比安全区大时不再被缩小或顶到负坐标。
 

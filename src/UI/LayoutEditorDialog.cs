@@ -102,7 +102,43 @@ namespace EasyLabel.UI
 
             SelectElement(FirstActive());
             SyncFromCanvas();
-            Shown += (s, e) => _canvas.Focus();
+            Shown += (s, e) =>
+            {
+                // 高 DPI + 小屏（1366×768）时窗口会比工作区高，底栏会被顶到屏幕外，
+                // 看上去就像“编辑窗口没有保存按钮”。显示前先按工作区收一次。
+                FitToWorkingArea();
+                _canvas.Focus();
+            };
+        }
+
+        /// <summary>
+        /// 把窗口收进当前屏幕的工作区：缩尺寸、夹位置，并把 MinimumSize 一起压下来。
+        /// 否则 125%/150% 缩放下 MinimumSize 会被放大到比工作区还大，用户既拖不回去，
+        /// 底栏（“应用布局”按钮）也永远停在屏幕外。
+        /// </summary>
+        private void FitToWorkingArea()
+        {
+            Rectangle wa;
+            try { wa = Screen.FromControl(this).WorkingArea; }
+            catch { return; }
+            if (wa.Width <= 0 || wa.Height <= 0) return;
+
+            int margin = Theme.S(16);
+            int maxW = Math.Max(Theme.S(560), wa.Width - margin * 2);
+            int maxH = Math.Max(Theme.S(380), wa.Height - margin * 2);
+
+            MinimumSize = new Size(
+                Math.Min(MinimumSize.Width, maxW),
+                Math.Min(MinimumSize.Height, maxH));
+
+            int w = Math.Min(Width, maxW);
+            int h = Math.Min(Height, maxH);
+            var bounds = new Rectangle(Left, Top, w, h);
+            if (bounds.Bottom > wa.Bottom) bounds.Y = wa.Bottom - h;
+            if (bounds.Right > wa.Right) bounds.X = wa.Right - w;
+            bounds.Y = Math.Max(bounds.Y, wa.Top);
+            bounds.X = Math.Max(bounds.X, wa.Left);
+            Bounds = bounds;
         }
 
         private Control BuildBottomBar()
@@ -113,7 +149,7 @@ namespace EasyLabel.UI
             _status.AutoSize = false;
             _status.Location = new Point(Theme.S(16), Theme.S(16));
             _status.Size = new Size(Theme.S(680), Theme.S(22));
-            _status.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
+            _status.Anchor = AnchorStyles.Left | AnchorStyles.Top;
 
             var reset = UiKit.SecondaryButton("重置为自动布局");
             reset.Size = new Size(Theme.S(144), Theme.S(32));
@@ -142,6 +178,9 @@ namespace EasyLabel.UI
                 ok.Location = new Point(bottom.Width - ok.Width - Theme.S(16), top);
                 cancel.Location = new Point(ok.Left - cancel.Width - Theme.S(8), top);
                 reset.Location = new Point(cancel.Left - reset.Width - Theme.S(16), top);
+                // 状态文字按剩余空间收窄，窄窗口下不会压到“重置为自动布局”按钮上。
+                int statusWidth = Math.Max(Theme.S(120), reset.Left - Theme.S(28));
+                _status.Width = statusWidth;
             };
             bottom.Resize += (s, e) => place();
 
@@ -150,6 +189,9 @@ namespace EasyLabel.UI
             bottom.Controls.Add(cancel);
             bottom.Controls.Add(ok);
             place();
+            // 回车 = 保存并关闭，Esc = 取消；底栏按钮不在鼠标焦点时也能键盘完成。
+            AcceptButton = ok;
+            CancelButton = cancel;
             return bottom;
         }
 
