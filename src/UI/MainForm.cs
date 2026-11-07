@@ -140,6 +140,7 @@ namespace EasyLabel.UI
             header.Controls.Add(settingsButton);
             _headerSettingsButton = settingsButton;
 
+            BuildImportPrintButton(header);
             BuildTemplateButton(header);
 
             _headerPanel = header;
@@ -276,9 +277,15 @@ namespace EasyLabel.UI
                 _templateButton.Location = new Point(
                     _headerSettingsButton.Left - _templateButton.Width - Theme.S(8), Theme.S(21));
             }
+            if (_importPrintButton != null)
+            {
+                int right = _templateButton != null ? _templateButton.Left : _headerSettingsButton.Left;
+                _importPrintButton.Location = new Point(right - _importPrintButton.Width - Theme.S(8), Theme.S(21));
+            }
 
-            int leftEdge = Math.Max(Theme.S(300), width - Theme.S(712));
-            int rightEdge = (_templateButton != null ? _templateButton.Left : _headerSettingsButton.Left) - Theme.S(16);
+            int leftEdge = Math.Max(Theme.S(280), width - Theme.S(812));
+            int rightEdge = (_importPrintButton != null ? _importPrintButton.Left
+                            : (_templateButton != null ? _templateButton.Left : _headerSettingsButton.Left)) - Theme.S(16);
             _headerPrinter.Location = new Point(leftEdge, Theme.S(23));
             _headerPrinter.Width = Math.Max(Theme.S(120), rightEdge - leftEdge);
         }

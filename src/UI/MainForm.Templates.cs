@@ -65,6 +65,11 @@ namespace EasyLabel.UI
             open.Click += (s, e) => OpenTemplateDialog();
             _templateMenu.Items.Add(open);
 
+            var importPrint = new ToolStripMenuItem("导入 .elbl / .zpl 文件并打印…");
+            importPrint.ToolTipText = "选一个模版或 ZPL 文件，看清预览和份数后直接出纸，不必先进模版库";
+            importPrint.Click += (s, e) => ImportPrintFile();
+            _templateMenu.Items.Add(importPrint);
+
             _templateMenu.Items.Add(new ToolStripSeparator());
 
             List<LabelTemplate> templates;

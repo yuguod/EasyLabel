@@ -40,6 +40,7 @@ internal static class TestRunner
         TestZplCopies();
         TestTemplates();
         TestZplTemplates();
+        TestImportPrint();
         TestExcelImport();
         TestCsvImport();
         TestZpl();
@@ -878,6 +879,100 @@ internal static class TestRunner
             index += token.Length;
         }
         return count;
+    }
+
+    /// <summary>
+    /// “导入并打印”链路：份数改写（覆盖已有 ^PQ、多段作业、带参数）/ 从任意路径读 .elbl 与 .zpl。
+    /// 界面部分（预览、按钮）由人工验证，这里只覆盖能被断言的核心行为。
+    /// </summary>
+    private static void TestImportPrint()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "EasyLabel-import-" + Guid.NewGuid().ToString("N"));
+        string elblPath = Path.Combine(Path.GetTempPath(), "EasyLabel-import-" + Guid.NewGuid().ToString("N") + TemplateStore.Extension);
+        string zplPath = Path.Combine(Path.GetTempPath(), "EasyLabel-import-" + Guid.NewGuid().ToString("N") + TemplateStore.ZplExtension);
+        try
+        {
+            var content = new LabelContent { Text = "IMPORT", ShowBarcode = false, ShowQr = false };
+            var options = new RenderOptions { Dpi = 203, LayoutMode = LayoutMode.TextOnly };
+            using (RenderedLabel rendered = LabelRenderer.Render(LabelSpec.Label40x15, content, options))
+            {
+                string single = ZplBuilder.BuildLabel(LabelSpec.Label40x15, rendered, new PrintOptions(), "import", 1);
+                string three = ZplBuilder.OverrideCopies(single, 3);
+                Check(CountOf(three, "^PQ3\r\n") == 1, "override inserts pq", CountOf(three, "^PQ3").ToString());
+                Check(CountOf(three, "^XA") == 1 && CountOf(three, "^XZ") == 1, "override keeps one format", "");
+                Check(three.Length == single.Length + 6, "override only adds command", (three.Length - single.Length).ToString());
+
+                string five = ZplBuilder.BuildLabel(LabelSpec.Label40x15, rendered, new PrintOptions(), "import", 5);
+                string two = ZplBuilder.OverrideCopies(five, 2);
+                Check(CountOf(two, "^PQ") == 1 && two.IndexOf("^PQ2\r\n", StringComparison.Ordinal) >= 0,
+                    "override replaces pq", two.IndexOf("^PQ2\r\n", StringComparison.Ordinal).ToString());
+                Check(two.IndexOf("^PQ5", StringComparison.Ordinal) < 0, "override drops old pq", "");
+
+                string multi = single + single;
+                Check(CountOf(ZplBuilder.OverrideCopies(multi, 4), "^PQ4\r\n") == 2, "override per format", "");
+            }
+
+            // 带参数的 ^PQ（^PQ3,0,1,Y）只改份数，后面的参数必须留着。
+            string withArgs = ZplBuilder.OverrideCopies("^XA\r\n^PQ3,0,1,Y\r\n^XZ\r\n", 7);
+            Check(withArgs.IndexOf("^PQ7,0,1,Y", StringComparison.Ordinal) >= 0, "override keeps pq params", withArgs.Replace("\r\n", "|"));
+
+            // ---- 从任意路径读 .elbl：导入打印就是拿外部路径直接 Load ----
+            var store = new TemplateStore(dir);
+            LabelSpec spec = LabelSpec.CreateCustom(50, 25);
+            var elblContent = new LabelContent
+            {
+                Text = "导入测试",
+                ShowBarcode = true,
+                BarcodeType = BarcodeType.Code128,
+                BarcodeValue = "IMP-1",
+                UseTextForBarcode = false
+            };
+            var elblOptions = new RenderOptions
+            {
+                Dpi = 203,
+                LayoutMode = LayoutMode.TextBarcode,
+                BarcodeType = BarcodeType.Code128,
+                FontSizeMm = 2.6,
+                TextAlign = TextAlign.Center
+            };
+            LabelTemplate template = LabelTemplate.Capture("导入测试", spec, elblOptions, elblContent, 2);
+            string savedPath = store.Save(template);
+            File.Copy(savedPath, elblPath, true);
+
+            LabelTemplate loadedElbl = new TemplateStore(Path.Combine(dir, "elsewhere")).Load(elblPath);
+            Check(loadedElbl != null && !loadedElbl.IsPrintableOnly, "import elbl loads template", elblPath);
+            Check(loadedElbl.Text == "导入测试", "import elbl text", loadedElbl.Text);
+            Check(loadedElbl.Copies == 2, "import elbl copies", loadedElbl.Copies.ToString());
+            Check(Math.Abs(loadedElbl.GetSpec().WidthMm - 50) < 0.001 && Math.Abs(loadedElbl.GetSpec().HeightMm - 25) < 0.001,
+                "import elbl size", loadedElbl.GetSpec().WidthMm + "x" + loadedElbl.GetSpec().HeightMm);
+
+            // ---- 从任意路径读外部 .zpl：只能直发，份数按 ^PQ 识别 ----
+            string rawZpl;
+            using (RenderedLabel rendered = LabelRenderer.Render(spec, elblContent, elblOptions))
+            {
+                rawZpl = ZplBuilder.BuildLabel(spec, rendered, new PrintOptions(), "external", 3);
+            }
+            File.WriteAllText(zplPath, rawZpl, System.Text.Encoding.ASCII);
+
+            LabelTemplate loadedZpl = new TemplateStore(Path.Combine(dir, "elsewhere2")).Load(zplPath);
+            Check(loadedZpl.IsPrintableOnly, "import zpl printable only", "");
+            Check(loadedZpl.ZplCopies == 3, "import zpl copies", loadedZpl.ZplCopies.ToString());
+            Check(loadedZpl.RawZpl == rawZpl, "import zpl keeps raw text", "");
+            Check(ZplTemplateFile.Inspect(loadedZpl.RawZpl).WidthDots > 0, "import zpl size readable", "");
+
+            // 打印前会剥掉内嵌注释再改份数，这两步叠起来不能破坏指令。
+            string printReady = ZplBuilder.OverrideCopies(ZplTemplateFile.StripMetadata(loadedZpl.RawZpl), 1);
+            Check(printReady.IndexOf("^GFA,", StringComparison.Ordinal) >= 0 && CountOf(printReady, "^XA") == 1,
+                "import print zpl intact", "");
+            Check(printReady.IndexOf("^PQ3", StringComparison.Ordinal) < 0 && CountOf(printReady, "^PQ1") == 1,
+                "import print zpl copies", CountOf(printReady, "^PQ").ToString());
+        }
+        finally
+        {
+            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+            try { if (File.Exists(elblPath)) File.Delete(elblPath); } catch { }
+            try { if (File.Exists(zplPath)) File.Delete(zplPath); } catch { }
+        }
     }
 
     private static void TestExcelImport()

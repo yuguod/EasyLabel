@@ -79,6 +79,70 @@ namespace EasyLabel.Core
             return head + "^PQ" + copies.ToString(CultureInfo.InvariantCulture) + LineBreak + body;
         }
 
+        /// <summary>
+        /// 强制把整份作业的打印份数改成 <paramref name="copies"/>。
+        /// 和 <see cref="Wrap"/> 不同：这里会覆盖文件里已有的 ^PQ（导入外部 .zpl 时用户的份数优先），
+        /// 一份文件里有多段 ^XA…^XZ 时逐段处理；没有 ^PQ 的段插在 ^XA 那一行之后。
+        /// </summary>
+        public static string OverrideCopies(string zpl, int copies)
+        {
+            if (string.IsNullOrEmpty(zpl)) return zpl ?? "";
+            if (copies < 1) copies = 1;
+            string value = copies.ToString(CultureInfo.InvariantCulture);
+
+            var sb = new StringBuilder(zpl.Length + 16);
+            int pos = 0;
+            bool foundFormat = false;
+            while (true)
+            {
+                int start = zpl.IndexOf("^XA", pos, StringComparison.OrdinalIgnoreCase);
+                if (start < 0) break;
+
+                int end = zpl.IndexOf("^XZ", start, StringComparison.OrdinalIgnoreCase);
+                int blockEnd = end < 0 ? zpl.Length : end + 3;
+                // ^XA 之前的注释和杂项原样保留。
+                sb.Append(zpl, pos, start - pos);
+                sb.Append(ApplyCopies(zpl.Substring(start, blockEnd - start), value));
+                pos = blockEnd;
+                foundFormat = true;
+            }
+
+            // 没有 ^XA 的片段（比如只截了一段指令）也照样处理，别悄悄丢掉用户的份数。
+            if (!foundFormat) return ApplyCopies(zpl, value);
+            sb.Append(zpl, pos, zpl.Length - pos);
+            return sb.ToString();
+        }
+
+        /// <summary>单段 ZPL：已有 ^PQ 就改数字，没有就插在第一行之后。</summary>
+        private static string ApplyCopies(string block, string value)
+        {
+            if (block.IndexOf("^PQ", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                int lineEnd = block.IndexOf('\n');
+                if (lineEnd < 0) return block + "^PQ" + value;
+                return block.Substring(0, lineEnd + 1) + "^PQ" + value + LineBreak + block.Substring(lineEnd + 1);
+            }
+
+            var sb = new StringBuilder(block.Length + 2);
+            int pos = 0;
+            while (true)
+            {
+                int index = block.IndexOf("^PQ", pos, StringComparison.OrdinalIgnoreCase);
+                if (index < 0)
+                {
+                    sb.Append(block, pos, block.Length - pos);
+                    break;
+                }
+                int i = index + 3;
+                while (i < block.Length && (block[i] == ' ' || block[i] == '\t')) i++;
+                int digits = i;
+                while (i < block.Length && block[i] >= '0' && block[i] <= '9') i++;
+                sb.Append(block, pos, digits - pos).Append(value);
+                pos = i;
+            }
+            return sb.ToString();
+        }
+
         public static byte[] ToAscii(string zpl)
         {
             return Encoding.ASCII.GetBytes(zpl ?? "");
