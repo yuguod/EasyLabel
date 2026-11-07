@@ -61,6 +61,7 @@ namespace EasyLabel.Core
             {
                 var parts = new List<string>();
                 parts.Add("版式 " + ModeDisplayName(Mode));
+                if (Options.LayoutPlan != null) parts.Add("自定义布局");
                 if (ShowText) parts.Add("文字 " + Math.Round(TextFontPx / Options.Dpi * 25.4, 1).ToString("0.0") + " mm");
                 if (ShowBarcode && Barcode != null)
                     parts.Add("一维码 " + BarcodeScale + " 点/模块");
@@ -190,14 +191,24 @@ namespace EasyLabel.Core
         private void ApplyLayoutPlan(LayoutPlan source)
         {
             LayoutPlan plan = source.Clone();
-            plan.Normalize(Spec);
+            // 自定义布局的坐标以安全区为原点，所以这里先把元素夹进安全区，
+            // 再加上边距偏到标签上——改边距时版式会跟着内缩，不会再出现“设了没反应”。
+            RectangleF safe = LayoutPlan.ContentBox(Spec, Options);
+            plan.Normalize(Spec, safe);
+            float mL = (float)Options.MarginLeftMm;
+            float mT = (float)Options.MarginTopMm;
 
             if (ShowText)
-                TextRect = MRect(plan.Text.X, plan.Text.Y, plan.Text.Width, plan.Text.Height);
+            {
+                RectangleF t = plan.Text.Width > 0 && plan.Text.Height > 0 ? plan.Text : safe;
+                TextRect = MRect(mL + t.X, mT + t.Y, t.Width, t.Height);
+            }
 
             if (ShowBarcode)
             {
                 RectangleF box = plan.Barcode;
+                if (box.Width <= 0 || box.Height <= 0) box = safe;
+                else box = new RectangleF(box.X + mL, box.Y + mT, box.Width, box.Height);
                 float gap = plan.HriGapMm;
 
                 // 高度比例由 LayoutPlan 记录（已剔除百分比影响），再乘当前“条码高度 %”，
@@ -229,6 +240,8 @@ namespace EasyLabel.Core
                 // 与一维码一致：plan.Qr 是“二维码可用区域”，二维码% 在此区域内缩放，
                 // 所以两条入口（布局编辑、百分比）不会互相覆盖。
                 RectangleF zone = plan.Qr;
+                if (zone.Width <= 0 || zone.Height <= 0) zone = safe;
+                else zone = new RectangleF(zone.X + mL, zone.Y + mT, zone.Width, zone.Height);
                 float size = Math.Min(zone.Width, zone.Height) * (Options.QrSizePercent / 100f);
                 float cx = zone.Left + zone.Width / 2f;
                 float cy = zone.Top + zone.Height / 2f;

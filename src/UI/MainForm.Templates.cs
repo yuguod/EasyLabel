@@ -309,7 +309,11 @@ namespace EasyLabel.UI
             _singleCopies.Value = ClampValue(_singleCopies, template.Copies);
 
             _singleLayoutPlan = template.LayoutPlan == null ? null : template.LayoutPlan.Clone();
-            if (_singleLayoutPlan != null) _singleLayoutPlan.Normalize(spec);
+            if (_singleLayoutPlan != null)
+            {
+                _singleLayoutPlan.Normalize(spec, LayoutPlan.ContentBox(spec,
+                    template.MarginLeftMm, template.MarginTopMm, template.MarginRightMm, template.MarginBottomMm));
+            }
 
             UpdateSingleControlStates();
             UpdateSinglePreview();

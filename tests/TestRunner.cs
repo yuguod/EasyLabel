@@ -37,6 +37,9 @@ internal static class TestRunner
         TestBold();
         TestLayoutPlan();
         TestLayoutPlanRoundTrip();
+        TestMarginsWithLayoutPlan();
+        TestLegacyLayoutMigration();
+        TestLayoutHelpers();
         TestZplCopies();
         TestTemplates();
         TestZplTemplates();
@@ -367,7 +370,16 @@ internal static class TestRunner
             ShowQr = true,
             QrValue = "https://example.com/A"
         };
-        var options = new RenderOptions { Dpi = 600, LayoutMode = LayoutMode.All };
+        // 这套断言只看“安全区内坐标怎么落到点阵上”，所以边距清零，让安全区等于整张标签。
+        var options = new RenderOptions
+        {
+            Dpi = 600,
+            LayoutMode = LayoutMode.All,
+            MarginTopMm = 0,
+            MarginBottomMm = 0,
+            MarginLeftMm = 0,
+            MarginRightMm = 0
+        };
         LayoutPlan auto;
         using (var bmp = new Bitmap(1, 1))
         using (var g = Graphics.FromImage(bmp))
@@ -507,8 +519,162 @@ internal static class TestRunner
         }
     }
 
-    private static void TestZplCopies()
+    /// <summary>边距在自定义布局下同样生效：改边距后墨迹必须跟着移动。</summary>
+    private static void TestMarginsWithLayoutPlan()
     {
+        LabelSpec spec = LabelSpec.CreateCustom(55, 33);
+        var content = new LabelContent { Text = "边距生效", ShowBarcode = false, ShowQr = false };
+
+        int autoSmall, autoLarge, planSmall, planLarge, planClamped, unused;
+
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(2, null)))
+            InkBounds(r.Bitmap, out autoSmall, out unused);
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(12, null)))
+            InkBounds(r.Bitmap, out autoLarge, out unused);
+        Check(autoLarge - autoSmall >= 50, "auto margin shifts ink",
+            autoSmall + " -> " + autoLarge);
+
+        LayoutPlan plan;
+        using (var bmp = new Bitmap(1, 1))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            RenderOptions options = MarginOptions(2, null);
+            LabelLayout layout = LabelLayout.Build(spec, content, options, g);
+            Check(layout.IsValid, "margin plan layout valid", string.Join("；", layout.Errors.ToArray()));
+            Check(Math.Abs(layout.TextRect.Left - options.MmToPx(2)) < 1.5, "auto text starts at margin",
+                layout.TextRect.Left.ToString("0.0"));
+            plan = LayoutPlan.FromLayout(layout);
+            Check(Math.Abs(plan.Text.X) < 0.05 && Math.Abs(plan.Text.Y) < 0.05,
+                "plan uses safe-box origin", Fmt(plan.Text));
+            Check(Math.Abs(plan.Text.Width - 51) < 0.2 && Math.Abs(plan.Text.Height - 29) < 0.2,
+                "plan size excludes margins", Fmt(plan.Text));
+        }
+
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(2, plan)))
+            InkBounds(r.Bitmap, out planSmall, out unused);
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(12, plan)))
+            InkBounds(r.Bitmap, out planLarge, out unused);
+
+        Check(Math.Abs(planSmall - autoSmall) <= 2, "plan same margin matches auto",
+            planSmall + " vs " + autoSmall);
+        // 关键：同一份布局，只改边距，输出必须变。
+        Check(planLarge - planSmall >= 50, "plan follows margin change",
+            planSmall + " -> " + planLarge);
+        Check(Math.Abs(planLarge - autoLarge) <= 2, "plan new margin matches auto",
+            planLarge + " vs " + autoLarge);
+
+        // 布局比安全区大时会被夹进安全区，而不是溢出到边距里。
+        var tooBig = new LayoutPlan { Text = new RectangleF(0, 0, 60, 40) };
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(12, tooBig)))
+            InkBounds(r.Bitmap, out planClamped, out unused);
+        Check(planClamped >= (int)Math.Round(12.0 * 8) - 2, "oversized plan clamped into safe box",
+            planClamped + " dots");
+
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(2, null)))
+            r.Bitmap.Save(Path.Combine(_outDir, "margin-plan-2mm.png"), ImageFormat.Png);
+        using (RenderedLabel r = LabelRenderer.Render(spec, content, MarginOptions(12, plan)))
+            r.Bitmap.Save(Path.Combine(_outDir, "margin-plan-12mm.png"), ImageFormat.Png);
+    }
+
+    private static RenderOptions MarginOptions(double margin, LayoutPlan plan)
+    {
+        return new RenderOptions
+        {
+            Dpi = 203,
+            LayoutMode = LayoutMode.TextOnly,
+            TextAlign = TextAlign.Left,
+            FontFamily = "SimHei",
+            FontSizeMm = 4,
+            MarginTopMm = margin,
+            MarginBottomMm = margin,
+            MarginLeftMm = margin,
+            MarginRightMm = margin,
+            LayoutPlan = plan
+        };
+    }
+
+    /// <summary>旧版模版里的布局是绝对坐标，读取时要按当时的边距平移过来。</summary>
+    private static void TestLegacyLayoutMigration()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "EasyLabel-legacy-" + Guid.NewGuid().ToString("N"));
+        string path = null;
+        try
+        {
+            var store = new TemplateStore(dir);
+            var options = new RenderOptions
+            {
+                Dpi = 203,
+                LayoutMode = LayoutMode.TextBarcode,
+                MarginLeftMm = 3,
+                MarginTopMm = 2,
+                MarginRightMm = 1,
+                MarginBottomMm = 1,
+                LayoutPlan = new LayoutPlan
+                {
+                    Text = new RectangleF(5, 4, 20, 6),
+                    Barcode = new RectangleF(5, 11, 30, 8),
+                    BarHeightRatio = 0.7f
+                }
+            };
+            var content = new LabelContent { Text = "旧模版", ShowBarcode = true, BarcodeValue = "A-1", UseTextForBarcode = false };
+            LabelTemplate template = LabelTemplate.Capture("旧模版", LabelSpec.CreateCustom(55, 33), options, content, 1);
+            path = store.Save(template);
+
+            string saved = File.ReadAllText(path);
+            Check(saved.IndexOf("space=\"margins\"", StringComparison.Ordinal) >= 0, "plan writes margin space", "");
+
+            // 去掉坐标系标记，模拟 v1.8 及更早保存的模版。
+            File.WriteAllText(path, saved.Replace(" space=\"margins\"", ""));
+
+            LabelTemplate loaded = store.Load(path);
+            Check(loaded.LayoutPlan != null, "legacy plan loaded", loaded.LayoutPlan == null ? "null" : Fmt(loaded.LayoutPlan.Text));
+            if (loaded.LayoutPlan != null)
+            {
+                Check(Math.Abs(loaded.LayoutPlan.Text.X - 2) < 0.01 && Math.Abs(loaded.LayoutPlan.Text.Y - 2) < 0.01,
+                    "legacy plan shifted by margin", Fmt(loaded.LayoutPlan.Text));
+                Check(Math.Abs(loaded.LayoutPlan.Barcode.X - 2) < 0.01 && Math.Abs(loaded.LayoutPlan.Barcode.Y - 9) < 0.01,
+                    "legacy barcode shifted by margin", Fmt(loaded.LayoutPlan.Barcode));
+            }
+        }
+        catch (Exception ex)
+        {
+            Check(false, "legacy layout migration", ex.GetType().Name + ": " + ex.Message);
+        }
+        finally
+        {
+            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    /// <summary>对齐 / 吸附 / 安全区计算。</summary>
+    private static void TestLayoutHelpers()
+    {
+        var area = new RectangleF(0, 0, 30, 12);
+        var rect = new RectangleF(1, 2, 10, 4);
+        Check(Math.Abs(LayoutPlan.AlignRect(rect, area, LayoutAnchor.Left).X - 0) < 0.01, "align left", "");
+        Check(Math.Abs(LayoutPlan.AlignRect(rect, area, LayoutAnchor.CenterHorizontal).X - 10) < 0.01,
+            "align center h", LayoutPlan.AlignRect(rect, area, LayoutAnchor.CenterHorizontal).X.ToString("0.0"));
+        Check(Math.Abs(LayoutPlan.AlignRect(rect, area, LayoutAnchor.Right).X - 20) < 0.01, "align right",
+            LayoutPlan.AlignRect(rect, area, LayoutAnchor.Right).X.ToString("0.0"));
+        Check(Math.Abs(LayoutPlan.AlignRect(rect, area, LayoutAnchor.Top).Y - 0) < 0.01, "align top", "");
+        Check(Math.Abs(LayoutPlan.AlignRect(rect, area, LayoutAnchor.CenterVertical).Y - 4) < 0.01,
+            "align center v", LayoutPlan.AlignRect(rect, area, LayoutAnchor.CenterVertical).Y.ToString("0.0"));
+        Check(Math.Abs(LayoutPlan.AlignRect(rect, area, LayoutAnchor.Bottom).Y - 8) < 0.01, "align bottom",
+            LayoutPlan.AlignRect(rect, area, LayoutAnchor.Bottom).Y.ToString("0.0"));
+
+        Check(Math.Abs(LayoutPlan.Snap(1.24f, 0.5f) - 1.0f) < 0.01, "snap down to grid", "");
+        Check(Math.Abs(LayoutPlan.Snap(1.26f, 0.5f) - 1.5f) < 0.01, "snap up to grid", "");
+        Check(Math.Abs(LayoutPlan.Snap(3.3f, 1f) - 3f) < 0.01, "snap 1mm grid", "");
+        Check(Math.Abs(LayoutPlan.Snap(3.3f, 0f) - 3.3f) < 0.001, "snap disabled keeps value", "");
+
+        RectangleF box = LayoutPlan.ContentBox(LabelSpec.Label40x15, 2, 3, 4, 1);
+        Check(Math.Abs(box.Width - 34) < 0.01 && Math.Abs(box.Height - 11) < 0.01,
+            "content box excludes margins", box.Width + "x" + box.Height);
+        RectangleF noRoom = LayoutPlan.ContentBox(LabelSpec.Label40x15, 20, 20, 20, 20);
+        Check(noRoom.Width >= 2 && noRoom.Height >= 2, "content box keeps minimum", noRoom.Width + "x" + noRoom.Height);
+    }
+
+    private static void TestZplCopies()    {
         var content = new LabelContent { Text = "ZPL COPIES", ShowBarcode = false, ShowQr = false };
         var options = new RenderOptions { Dpi = 203, LayoutMode = LayoutMode.TextOnly };
         using (RenderedLabel rendered = LabelRenderer.Render(LabelSpec.Label40x15, content, options))

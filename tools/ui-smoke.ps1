@@ -75,5 +75,21 @@ Shot $dlg2 (Join-Path $OutDir 'import-zpl.png')
 Write-Host ("导入 .zpl ：" + $dlg2.Width + "x" + $dlg2.Height + "  份数=" + $dlg2.Copies)
 $dlg2.Close(); $dlg2.Dispose()
 
+# 版式布局编辑：安全区、网格、右侧数值/对齐面板。
+$spec = [EasyLabel.Core.LabelSpec]::Label40x15
+$content = New-Object EasyLabel.Core.LabelContent
+$content.Text = "版式测试 LAYOUT-01"
+$content.ShowBarcode = $true
+$content.BarcodeValue = "A-2026-001"
+$content.ShowQr = $true
+$content.QrValue = "https://example.com/layout"
+$opts = New-Object EasyLabel.Core.RenderOptions
+$opts.Dpi = 203
+$opts.LayoutMode = [EasyLabel.Core.LayoutMode]::All
+$editor = New-Object EasyLabel.UI.LayoutEditorDialog($spec, $content, $opts)
+Shot $editor (Join-Path $OutDir 'layout-editor.png')
+Write-Host ("布局编辑：" + $editor.Width + "x" + $editor.Height)
+$editor.Close(); $editor.Dispose()
+
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("截图已保存：" + $OutDir) -ForegroundColor Green

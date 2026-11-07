@@ -440,6 +440,8 @@ namespace EasyLabel.Core
             if (plan == null) return new XElement("Plan", new XAttribute("enabled", false));
             return new XElement("Plan",
                 new XAttribute("enabled", true),
+                // 标记坐标系：v1.9 起布局坐标以安全区（去掉边距的区域）为原点。
+                new XAttribute("space", LayoutPlan.SpaceMargins),
                 new XAttribute("barHeightRatio", Num(plan.BarHeightRatio)),
                 new XAttribute("hriGapMm", Num(plan.HriGapMm)),
                 RectToXml("Text", plan.Text),
@@ -499,7 +501,7 @@ namespace EasyLabel.Core
             XElement plan = root.Element("Plan");
             if (plan != null && ParseBool((string)plan.Attribute("enabled"), false))
             {
-                t.LayoutPlan = new LayoutPlan
+                var loaded = new LayoutPlan
                 {
                     Text = ParseRect(plan.Element("Text")),
                     Barcode = ParseRect(plan.Element("Barcode")),
@@ -507,6 +509,14 @@ namespace EasyLabel.Core
                     BarHeightRatio = (float)ParseDouble((string)plan.Attribute("barHeightRatio"), 0),
                     HriGapMm = (float)ParseDouble((string)plan.Attribute("hriGapMm"), LayoutPlan.DefaultHriGapMm)
                 };
+                // 旧模版存的是“标签左上角为原点”的绝对坐标（边距当时已经被烘进坐标里），
+                // 这里按当时的边距平移到安全区坐标系，位置看起来不变，但以后改边距就会跟着动。
+                string space = (string)plan.Attribute("space") ?? "";
+                if (!string.Equals(space, LayoutPlan.SpaceMargins, StringComparison.Ordinal))
+                {
+                    loaded = loaded.ToMarginSpace((float)t.MarginLeftMm, (float)t.MarginTopMm);
+                }
+                t.LayoutPlan = loaded;
             }
 
             XElement content = root.Element("Content");

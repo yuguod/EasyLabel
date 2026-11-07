@@ -459,11 +459,25 @@ namespace EasyLabel.UI
             {
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 {
-                    _batchLayoutPlan = dialog.LayoutResult;
+                    _batchLayoutPlan = dialog.UseAutoLayout ? null : dialog.LayoutResult;
+                    _batchMarginTop.Value = ToBatchMarginValue(_batchMarginTop, dialog.MarginTopMm);
+                    _batchMarginBottom.Value = ToBatchMarginValue(_batchMarginBottom, dialog.MarginBottomMm);
+                    _batchMarginLeft.Value = ToBatchMarginValue(_batchMarginLeft, dialog.MarginLeftMm);
+                    _batchMarginRight.Value = ToBatchMarginValue(_batchMarginRight, dialog.MarginRightMm);
                     OnBatchOptionsChanged();
-                    SetStatus("已应用批量布局；所有行按该位置/尺寸打印。", false, false);
+                    SetStatus(dialog.UseAutoLayout
+                        ? "已恢复批量自动布局。"
+                        : "已应用批量布局；所有行按该位置/尺寸打印。", false, false);
                 }
             }
+        }
+
+        private static decimal ToBatchMarginValue(NumericUpDown num, double mm)
+        {
+            decimal value = (decimal)Math.Round(mm, 2);
+            if (value < num.Minimum) value = num.Minimum;
+            if (value > num.Maximum) value = num.Maximum;
+            return value;
         }
 
         private BatchOptions GetBatchOptions()

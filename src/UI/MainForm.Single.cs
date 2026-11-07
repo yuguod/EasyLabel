@@ -137,6 +137,15 @@ namespace EasyLabel.UI
             previewLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
 
             _singlePreview = new LabelPreviewControl { Dock = DockStyle.Fill };
+            var previewMenu = new ContextMenuStrip { Font = Theme.Ui(9f) };
+            var menuEdit = new ToolStripMenuItem("布局编辑…");
+            menuEdit.Click += (s, e) => EditSingleLayout();
+            var menuReset = new ToolStripMenuItem("恢复自动布局");
+            menuReset.Click += (s, e) => ResetSingleLayout();
+            previewMenu.Items.Add(menuEdit);
+            previewMenu.Items.Add(menuReset);
+            previewMenu.Opening += (s, e) => menuReset.Enabled = _singleLayoutPlan != null;
+            _singlePreview.ContextMenuStrip = previewMenu;
             var bottom = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Card };
             _singleInfo = Theme.Label("", 8.6f, Theme.Muted);
             _singleInfo.AutoSize = false;
@@ -407,11 +416,39 @@ namespace EasyLabel.UI
             {
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 {
-                    _singleLayoutPlan = dialog.LayoutResult;
+                    _singleLayoutPlan = dialog.UseAutoLayout ? null : dialog.LayoutResult;
+                    ApplySingleMargins(dialog);
                     SchedulePreview();
-                    SetStatus("已应用自定义布局；打印和保存 ZPL 都会使用该位置/尺寸。", false, false);
+                    SetStatus(dialog.UseAutoLayout
+                        ? "已恢复自动布局，元素会按边距自动排布。"
+                        : "已应用自定义布局；打印和保存 ZPL 都会使用该位置/尺寸。", false, false);
                 }
             }
+        }
+
+        /// <summary>布局编辑里可以就地拖边距，确定后回写到页面上的四个数字框。</summary>
+        private void ApplySingleMargins(LayoutEditorDialog dialog)        {
+            _singleMarginTop.Value = ToMarginValue(_singleMarginTop, dialog.MarginTopMm);
+            _singleMarginBottom.Value = ToMarginValue(_singleMarginBottom, dialog.MarginBottomMm);
+            _singleMarginLeft.Value = ToMarginValue(_singleMarginLeft, dialog.MarginLeftMm);
+            _singleMarginRight.Value = ToMarginValue(_singleMarginRight, dialog.MarginRightMm);
+        }
+
+        private static decimal ToMarginValue(NumericUpDown num, double mm)
+        {
+            decimal value = (decimal)Math.Round(mm, 2);
+            if (value < num.Minimum) value = num.Minimum;
+            if (value > num.Maximum) value = num.Maximum;
+            return value;
+        }
+
+        /// <summary>清掉自定义布局，回到“按边距自动排布”。</summary>
+        private void ResetSingleLayout()
+        {
+            if (_singleLayoutPlan == null) return;
+            _singleLayoutPlan = null;
+            SchedulePreview();
+            SetStatus("已恢复自动布局，元素按当前边距重新排布。", false, false);
         }
 
         private RenderOptions GetSingleOptions()

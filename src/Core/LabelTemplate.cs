@@ -261,7 +261,11 @@ namespace EasyLabel.Core
             BarcodeHeightPercent = rules.BarcodeHeightPercent;
             QrSizePercent = rules.QrSizePercent;
 
-            if (LayoutPlan != null) LayoutPlan.Normalize(GetSpec());
+            if (LayoutPlan != null)
+            {
+                LayoutPlan.Normalize(GetSpec(), LayoutPlan.ContentBox(GetSpec(),
+                    MarginLeftMm, MarginTopMm, MarginRightMm, MarginBottomMm));
+            }
         }
 
         public string LayoutModeName
