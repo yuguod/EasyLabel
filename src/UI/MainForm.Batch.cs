@@ -44,6 +44,7 @@ namespace EasyLabel.UI
         private Button _batchPrint;
         private Button _batchSaveZpl;
         private Button _batchImport;
+        private Button _batchSequence;
         private Button _batchLayoutEdit;
         private LayoutPlan _batchLayoutPlan;
         private bool _batchLoading;
@@ -69,7 +70,7 @@ namespace EasyLabel.UI
             var left = new FlowLayoutPanel
             {
                 Dock = DockStyle.Left,
-                Width = 600,
+                Width = 616,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
                 BackColor = Color.White
@@ -78,22 +79,26 @@ namespace EasyLabel.UI
             _batchImport.Size = new Size(154, 36);
             _batchImport.Click += (s, e) => ImportBatch();
             var template = UiKit.SecondaryButton("导入模板");
-            template.Size = new Size(84, 36);
+            template.Size = new Size(76, 36);
             template.Click += (s, e) => SaveTemplate();
+            _batchSequence = UiKit.SecondaryButton("序列…");
+            _batchSequence.Size = new Size(88, 36);
+            _batchSequence.Click += (s, e) => GenerateSequence();
             _batchLayoutEdit = UiKit.SecondaryButton("布局编辑…");
-            _batchLayoutEdit.Size = new Size(100, 36);
+            _batchLayoutEdit.Size = new Size(92, 36);
             _batchLayoutEdit.Click += (s, e) => EditBatchLayout();
             var clear = UiKit.SecondaryButton("清空");
-            clear.Size = new Size(58, 36);
+            clear.Size = new Size(54, 36);
             clear.Click += (s, e) => ClearBatch();
             var all = UiKit.LinkButton("全选");
-            all.Size = new Size(52, 36);
+            all.Size = new Size(46, 36);
             all.Click += (s, e) => SelectAll(true);
             var none = UiKit.LinkButton("全不选");
-            none.Size = new Size(62, 36);
+            none.Size = new Size(54, 36);
             none.Click += (s, e) => SelectAll(false);
             left.Controls.Add(_batchImport);
             left.Controls.Add(template);
+            left.Controls.Add(_batchSequence);
             left.Controls.Add(_batchLayoutEdit);
             left.Controls.Add(clear);
             left.Controls.Add(all);
@@ -434,6 +439,56 @@ namespace EasyLabel.UI
             if (status == "有误") e.CellStyle.ForeColor = Theme.Error;
             else if (status == "已发送") e.CellStyle.ForeColor = Theme.Success;
             else e.CellStyle.ForeColor = Theme.Muted;
+        }
+
+        /// <summary>
+        /// 批量序列：固定前缀 + 连续编号，直接生成多行，不用先做 Excel。
+        /// 行里的条码/二维码跟随页面上的勾选状态（勾了就填同一个序列号）。
+        /// </summary>
+        private void GenerateSequence()
+        {
+            using (var dialog = new SequenceDialog())
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (dialog.Values == null || dialog.Values.Count == 0) return;
+
+                if (dialog.ClearExisting) _batchRows.Clear();
+
+                bool barcode = _batchBarcodeEnabled != null && _batchBarcodeEnabled.Checked;
+                bool qr = _batchQrEnabled != null && _batchQrEnabled.Checked;
+
+                int firstNew = _batchRows.Count;
+                int number = _batchRows.Count == 0 ? 0 : _batchRows.Max(r => r.RowNumber);
+                foreach (string value in dialog.Values)
+                {
+                    number++;
+                    _batchRows.Add(new BatchRow
+                    {
+                        RowNumber = number,
+                        Text = value,
+                        Barcode = barcode ? value : "",
+                        Qr = qr ? value : "",
+                        Selected = true
+                    });
+                }
+
+                BindBatchRows();
+                ValidateAllBasic();
+                UpdateBatchSummary();
+                if (_batchGrid.Rows.Count > 0)
+                {
+                    int target = Math.Min(firstNew, _batchGrid.Rows.Count - 1);
+                    _batchGrid.ClearSelection();
+                    _batchGrid.Rows[target].Selected = true;
+                    _batchGrid.CurrentCell = _batchGrid.Rows[target].Cells[2];
+                    try { _batchGrid.FirstDisplayedScrollingRowIndex = target; }
+                    catch { }
+                }
+                UpdateBatchPreview();
+                SetStatus("已生成 " + dialog.Values.Count + " 个序列号：" + dialog.Values[0] + " → " +
+                          dialog.Values[dialog.Values.Count - 1] + "，可直接打印或继续改表格。", false, false);
+                ResetBatchScroll();
+            }
         }
 
         private void EditBatchLayout()

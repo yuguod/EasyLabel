@@ -42,6 +42,7 @@ internal static class TestRunner
         TestLegacyLayoutMigration();
         TestLayoutHelpers();
         TestZplCopies();
+        TestSequence();
         TestTemplates();
         TestZplTemplates();
         TestImportPrint();
@@ -804,6 +805,48 @@ internal static class TestRunner
             "content box excludes margins", box.Width + "x" + box.Height);
         RectangleF noRoom = LayoutPlan.ContentBox(LabelSpec.Label40x15, 20, 20, 20, 20);
         Check(noRoom.Width >= 2 && noRoom.Height >= 2, "content box keeps minimum", noRoom.Width + "x" + noRoom.Height);
+    }
+
+    private static void TestSequence()
+    {
+        // 用户场景：20261117DLX0001 起 50 个 → 末个 20261117DLX0050
+        var spec = new SequenceSpec { Prefix = "20261117DLX", Start = 1, Step = 1, Digits = 4, Count = 50 };
+        var list = SequenceGenerator.Build(spec);
+        Check(list.Count == 50, "sequence count 50", list.Count.ToString());
+        Check(list[0] == "20261117DLX0001", "sequence first", list[0]);
+        Check(list[49] == "20261117DLX0050", "sequence last", list[49]);
+
+        Check(SequenceGenerator.LastValue(1, 1, 50) == 50, "sequence last value", "");
+        Check(SequenceGenerator.CountFor(1, 50, 1) == 50, "sequence count from last", "");
+        Check(SequenceGenerator.CountFor(1, 9, 2) == 5, "sequence count step 2", "");
+        Check(SequenceGenerator.CountFor(1, 11, 3) == -1, "sequence count not divisible", "");
+        Check(SequenceGenerator.CountFor(1, 10, 3) == 4, "sequence count step 3", "");
+        Check(SequenceGenerator.CountFor(5, 1, 1) == 0, "sequence last before start", "");
+
+        Check(SequenceGenerator.Format(7, 4) == "0007", "sequence pad", SequenceGenerator.Format(7, 4));
+        Check(SequenceGenerator.Format(12345, 4) == "12345", "sequence overflow digits", SequenceGenerator.Format(12345, 4));
+
+        long value;
+        int digits;
+        Check(SequenceGenerator.TryParseNumber("0001", out value, out digits) && value == 1 && digits == 4,
+            "sequence parse padding", value + "/" + digits);
+        Check(!SequenceGenerator.TryParseNumber("12A", out value, out digits), "sequence parse reject", "");
+
+        string head, number;
+        Check(SequenceGenerator.TrySplitTrailingNumber("20261117DLX0001", out head, out number) &&
+              head == "20261117DLX" && number == "0001", "sequence split code", head + "|" + number);
+
+        var spec2 = new SequenceSpec { Prefix = "A-", Suffix = "-X", Start = 100, Step = 5, Digits = 3, Count = 3 };
+        var list2 = SequenceGenerator.Build(spec2);
+        Check(list2[0] == "A-100-X" && list2[2] == "A-110-X", "sequence prefix suffix step",
+            string.Join(",", list2.ToArray()));
+
+        Check(SequenceGenerator.Validate(new SequenceSpec { Count = 0 }).Length > 0, "sequence reject zero count", "");
+        Check(SequenceGenerator.Validate(new SequenceSpec { Count = 1, Step = 0 }).Length > 0, "sequence reject zero step", "");
+        Check(SequenceGenerator.Validate(new SequenceSpec { Count = SequenceGenerator.MaxCount + 1 }).Length > 0,
+            "sequence reject too many", "");
+        Check(SequenceGenerator.Build(new SequenceSpec { Start = 1, Digits = 1, Count = 3 })[2] == "3",
+            "sequence no padding", "");
     }
 
     private static void TestZplCopies()    {

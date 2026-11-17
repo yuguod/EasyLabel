@@ -1,12 +1,12 @@
-# EasyLabel 标签轻松打 v1.10.1
+# EasyLabel 标签轻松打 v1.11.0
 
 Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×20 mm** 和自定义尺寸，单张文本打印、Excel/CSV 批量打印，以及 Code 128 / Code 39 / EAN-13 一维码和 QR 二维码。
 
 程序采用 **ZPL 直发**：把整张标签渲染成 1-bit 点阵，通过 `^GFA` 发送给打印机，不经过 Windows 驱动的页面缩放和重新排版。中文、条码、二维码的预览与实际打印使用同一张位图。
 
 > **直接使用**：到 [Releases](https://github.com/yuguod/EasyLabel/releases) 下载最新版。
-> 推荐 `EasyLabel-1.10.1-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
-> 也可以下载 `EasyLabel-1.10.1-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
+> 推荐 `EasyLabel-1.11.0-Setup.exe`（安装版，装完自动带开始菜单/桌面快捷方式、可在“应用和功能”里卸载）；
+> 也可以下载 `EasyLabel-1.11.0-win64.zip` 解压即用（绿色版）。仓库只存源码，构建产物和版本包不进 Git（见 [从源码构建](#13-从源码构建)）。
 
 ![单张打印](docs/screenshot-single.png)
 
@@ -29,7 +29,7 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 
 ### 安装版
 
-运行 `EasyLabel-1.10.1-Setup.exe`：
+运行 `EasyLabel-1.11.0-Setup.exe`：
 
 1. 安装目录默认 `%LOCALAPPDATA%\Programs\EasyLabel`（当前用户，不需要管理员权限）。也可以改成任意目录；填 `C:\Program Files\...` 时安装程序会自动请求管理员权限，并改为“所有用户”安装（注册表写 HKLM、快捷方式放进公共开始菜单）。
 2. 可选“创建桌面快捷方式”“安装完成后启动”。
@@ -41,8 +41,8 @@ Windows 条码标签打印工具。支持 **40×15 mm**、**30×25 mm**、**30×
 无人值守部署（IT 批量装）：
 
 ```bat
-EasyLabel-1.10.1-Setup.exe /S /D="D:\Tools\EasyLabel"
-EasyLabel-1.10.1-Setup.exe /uninstall /S
+EasyLabel-1.11.0-Setup.exe /S /D="D:\Tools\EasyLabel"
+EasyLabel-1.11.0-Setup.exe /uninstall /S
 ```
 
 `/S` 静默安装（默认目录）、`/D=` 指定目录、`/uninstall` 卸载；静默卸载会结束正在运行的程序并保留用户设置。
@@ -51,7 +51,7 @@ EasyLabel-1.10.1-Setup.exe /uninstall /S
 
 三种入口，效果相同：
 
-- 点左侧栏底部的版本号（`v1.10.1 · 安装版`）；
+- 点左侧栏底部的版本号（`v1.11.0 · 安装版`）；
 - “关于 → 检查更新”；
 - 启动时自动检查（默认开启，每天最多一次，可在“打印机设置 → 软件更新”关闭）。
 
@@ -72,7 +72,7 @@ EasyLabel-1.10.1-Setup.exe /uninstall /S
 | 留空 | `api.github.com/repos/yuguod/EasyLabel/releases/latest` |
 | `https://github.com/yuguod/EasyLabel` | 同上（仓库主页） |
 | `https://github.com/yuguod/EasyLabel/releases` | 同上（发布页） |
-| `https://github.com/yuguod/EasyLabel/releases/tag/v1.10.1` | `.../releases/tags/v1.10.1`（指定版本） |
+| `https://github.com/yuguod/EasyLabel/releases/tag/v1.11.0` | `.../releases/tags/v1.11.0`（指定版本） |
 | 其他 URL（如内网 `http://intranet/update.json`） | 原样请求 |
 
 默认地址失败时会自动再试一次仓库里的 `update.json`（两条链路的可达性不同），仍失败才报错。
@@ -85,9 +85,9 @@ EasyLabel-1.10.1-Setup.exe /uninstall /S
 
 ```json
 {
-  "version": "1.10.1",
+  "version": "1.11.0",
   "releaseDate": "2026-11-07",
-  "url": "https://example.com/easylabel/EasyLabel-1.10.1-update.zip",
+  "url": "https://example.com/easylabel/EasyLabel-1.11.0-update.zip",
   "sha256": "（更新包的 SHA-256，小写；留空则跳过校验）",
   "size": 1234567,
   "mandatory": false,
@@ -325,6 +325,23 @@ LICENSES/                   开源许可证全文
 5. 在表格中可直接修改内容、勾选要打印的行。
 6. 点击工具栏“打印”。
 
+### 批量序列（不用 Excel，直接连号）
+
+只要打一串连号条码时，不用先做表格：批量页工具栏点 **“序列…”**。
+
+- **固定前缀 / 固定后缀**：不变的部分，例如 `20261117DLX`、`-A`；后缀可留空。
+- **起始编号**：例如 `0001`，位数按输入长度补零（`0001` → 4 位）。也可以直接把整串条码 `20261117DLX0001` 粘进来，程序会把前缀拆到“固定前缀”里。
+- **数量** 与 **最后一个编号** 互相推算，以你最后改的那个为准：
+  - 数量填 `50`，最后一个自动变成 `20261117DLX0050`；
+  - 直接改成 `20261117DLX0100`，数量自动回到 `100`。
+- **步长**：连号填 1，隔号填 2 / 5 等；末位编号对不上步长时会提示，不会生成半截。
+- 预览区显示首个、末个以及前后几行示例；确认后点 **“生成并加入表格”**。
+- 生成的行里文本一定会填；一维码、二维码按批量页当前的勾选状态填入同一个序列号（想让每行都带条码，先在“批量版式”里勾上“一维码”）。
+- 勾选 **“生成后清空现有数据”** 会替换表格里已有的行，不勾则追加在末尾。
+- 一次最多 **20000** 行；生成后仍可逐行改内容、取消勾选、套用布局编辑。
+
+![批量序列](docs/screenshot-sequence.png)
+
 ### Excel 格式建议
 
 | 文本 | 条码 | 二维码 |
@@ -489,9 +506,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Tests
 
 - `dist/EasyLabel/EasyLabel.exe`（单文件，依赖已内嵌）
 - `dist/EasyLabel/EasyLabelUpdater.exe`（在线更新的替换程序）
-- `dist/EasyLabel-1.10.1-win64.zip`（绿色版）
-- `dist/EasyLabel-1.10.1-update.zip`（在线更新包）
-- `dist/EasyLabel-1.10.1-Setup.exe`（安装版，更新包已内嵌）
+- `dist/EasyLabel-1.11.0-win64.zip`（绿色版）
+- `dist/EasyLabel-1.11.0-update.zip`（在线更新包）
+- `dist/EasyLabel-1.11.0-Setup.exe`（安装版，更新包已内嵌）
 - `dist/update.json`（更新清单，含 SHA-256 与包大小）
 - 构建脚本会把上述产物同步归档到 `releases/`，以后每个版本都保留，不覆盖旧包。
 
@@ -575,6 +592,8 @@ Copyright © 2026 yuguod. 保留所有权利。
 ---
 
 ## 16. 版本
+
+**v1.11.0** — 新增 **批量序列**：批量页工具栏“序列…”，填固定前缀（如 `20261117DLX`）+ 起始编号（如 `0001`）就能直接生成整段连号，不用先做 Excel。**数量与最后一个编号互相推算**——数量填 50，最后一个自动是 `…0050`；直接把最后一个改成 `…0100`，数量自动回到 100。支持固定后缀、步长（隔号打印）、编号位数自动补零；整串条码可以粘贴，程序自动把前缀拆出来。生成后逐行进入表格，条码/二维码跟随批量页当前勾选状态，可在预览区确认前后几行再生成。
 
 **v1.10.1** — 修复 **“布局编辑窗口在部分屏幕上看不到‘应用布局’按钮”**：高 DPI（125% / 150%）叠加上 1366×768 这类小屏时，窗口会按缩放放大到比工作区还高，底部按钮栏被顶到屏幕外，看上去就像“批量打印的布局编辑没有保存按钮”。现在窗口显示时会先按当前屏幕工作区收尺寸、夹位置，并把最小尺寸一起压到工作区以内；底栏状态文字也会按剩余宽度收窄，不再压到“重置为自动布局”上。另外补上 **回车 = 保存并关闭、Esc = 取消**。单张页和批量页共用这个窗口，两边都生效。
 
