@@ -320,6 +320,26 @@ namespace EasyLabel.Core
         public const string HelpText =
             "可插入 {text} {barcode} {qr} {date} {time} {row}；不认识的占位符原样显示。";
 
+        /// <summary>界面“插入占位符”菜单用：占位符 → 说明（顺序即菜单顺序）。</summary>
+        public static KeyValuePair<string, string>[] Palette()
+        {
+            return new[]
+            {
+                new KeyValuePair<string, string>("{text}", "标签文字（批量时是该行文本）"),
+                new KeyValuePair<string, string>("{barcode}", "一维码内容"),
+                new KeyValuePair<string, string>("{qr}", "二维码内容"),
+                new KeyValuePair<string, string>("{row}", "批量行号（第几行）"),
+                new KeyValuePair<string, string>("{date}", "打印日期 2026-11-17"),
+                new KeyValuePair<string, string>("{time}", "打印时间 09:05"),
+                new KeyValuePair<string, string>("{datetime}", "日期 + 时间"),
+                new KeyValuePair<string, string>("{year}", "年（2026）"),
+                new KeyValuePair<string, string>("{month}", "月（11）"),
+                new KeyValuePair<string, string>("{day}", "日（17）"),
+                new KeyValuePair<string, string>("{hour}", "时（09）"),
+                new KeyValuePair<string, string>("{minute}", "分（05）")
+            };
+        }
+
         public static string Expand(string pattern, LabelContent content, DateTime now)
         {
             if (string.IsNullOrEmpty(pattern)) return "";

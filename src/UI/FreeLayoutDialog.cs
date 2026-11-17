@@ -38,8 +38,16 @@ namespace EasyLabel.UI
         private ComboBox _gridStep;
         private Label _status;
         private Label _hint;
-        private Button _delete;
-        private Button _duplicate;
+        private Label _kindBadge;
+        private Button _deleteTool;
+        private Button _duplicateTool;
+        private Button _layerUp;
+        private Button _layerDown;
+        private Button _tokenBtn;
+        private Button _marginToggle;
+        private ToolTip _tips;
+        private readonly List<Control> _selectionOnly = new List<Control>();
+        private DateTime _lastNumberUndo = DateTime.MinValue;
 
         private bool _syncing;
 
@@ -86,6 +94,14 @@ namespace EasyLabel.UI
             Font = Theme.Ui(9f);
             KeyPreview = true;
 
+            _tips = new ToolTip
+            {
+                AutoPopDelay = 9000,
+                InitialDelay = 320,
+                ReshowDelay = 120,
+                ShowAlways = true
+            };
+
             _canvas = new FreeLayoutCanvas(_spec, _content, _options, _initialLayout)
             {
                 Dock = DockStyle.Fill,
@@ -95,13 +111,23 @@ namespace EasyLabel.UI
             _canvas.SelectionChanged += (s, e) => { SyncFromCanvas(); };
             _canvas.LayoutChanged += (s, e) => { UpdateListItem(); SyncNumbers(); };
             _canvas.StatusChanged += (s, e) => { if (_status != null) _status.Text = _canvas.GetStatusText(); };
-            _canvas.ElementActivated += (s, e) => { if (_text != null) _text.Focus(); };
+            _canvas.ElementActivated += (s, e) => { EditContent(); };
+            _tips.SetToolTip(_canvas,
+                "拖动移动 · 拖四角缩放（二维码保持正方形）\r\n" +
+                "方向键 0.1 mm，Shift + 方向键 1 mm\r\n" +
+                "Ctrl+D 复制 · Delete 删除 · Ctrl+↑↓ 调层级 · Ctrl+Z 撤销\r\n" +
+                "双击元素改内容，右键有更多操作");
+
+            var center = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = Padding.Empty };
+            center.Controls.Add(_canvas);
+            center.Controls.Add(BuildToolbar());
 
             var root = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background };
-            root.Controls.Add(_canvas);
+            root.Controls.Add(center);
             root.Controls.Add(BuildSidebar());
             root.Controls.Add(BuildBottomBar());
             Controls.Add(root);
+            _canvas.ContextMenuStrip = BuildCanvasMenu();
 
             Theme.ApplyScale(this, new Size(1180, 800));
 
@@ -197,7 +223,7 @@ namespace EasyLabel.UI
             var side = new Panel
             {
                 Dock = DockStyle.Right,
-                Width = Theme.S(400),
+                Width = Theme.S(404),
                 BackColor = Theme.Card,
                 Padding = new Padding(Theme.S(12), Theme.S(8), Theme.S(8), Theme.S(8))
             };
@@ -220,46 +246,57 @@ namespace EasyLabel.UI
 
             // ---------------------------------------------------------------- 元素列表
             stack.Controls.Add(Heading("元素"));
-            var addRow = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoSize = true,
-                BackColor = Theme.Card,
-                Margin = new Padding(0, 0, 0, 6)
-            };
-            Button addText = SmallButton("+ 文字", Theme.S(84));
-            addText.Click += (s, e) => AddElement(FreeElementKind.Text);
-            Button addBar = SmallButton("+ 一维码", Theme.S(92));
-            addBar.Click += (s, e) => AddElement(FreeElementKind.Barcode);
-            Button addQr = SmallButton("+ 二维码", Theme.S(92));
-            addQr.Click += (s, e) => AddElement(FreeElementKind.Qr);
-            addRow.Controls.Add(addText);
-            addRow.Controls.Add(addBar);
-            addRow.Controls.Add(addQr);
-            stack.Controls.Add(addRow);
-
             _list = new ListBox
             {
-                Height = Theme.S(118),
+                Height = Theme.S(144),
                 IntegralHeight = false,
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = Theme.Ui(9.2f),
-                Margin = new Padding(0, 0, 0, 8)
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = Theme.S(28),
+                Margin = new Padding(0, 0, 0, Theme.S(8))
             };
+            _list.DrawItem += DrawElementItem;
             _list.SelectedIndexChanged += (s, e) =>
             {
                 if (_syncing) return;
                 _canvas.SelectedIndex = _list.SelectedIndex;
             };
+            _list.DoubleClick += (s, e) => RenameSelected();
             stack.Controls.Add(_list);
+            _tips.SetToolTip(_list, "列表越靠下，元素画得越靠上层；\r\n双击可以改名称。");
 
-            // ---------------------------------------------------------------- 属性
-            stack.Controls.Add(SectionTitle("选中元素"));
+
+            // ---------------------------------------------------------------- 选中元素
+            var selHeader = new Panel
+            {
+                Height = Theme.S(26),
+                BackColor = Theme.Card,
+                Margin = new Padding(0, Theme.S(2), 0, Theme.S(2))
+            };
+            var selTitle = Theme.Label("选中元素", 9.4f, Theme.Text, FontStyle.Bold);
+            selTitle.AutoSize = true;
+            selTitle.Location = new Point(0, Theme.S(5));
+            _kindBadge = new Label
+            {
+                AutoSize = false,
+                Size = new Size(Theme.S(66), Theme.S(20)),
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Theme.AccentSoft,
+                ForeColor = Theme.Accent,
+                Font = Theme.Ui(8.4f),
+                Text = ""
+            };
+            selHeader.Controls.Add(selTitle);
+            selHeader.Controls.Add(_kindBadge);
+            selHeader.Resize += (s, e) =>
+                _kindBadge.Location = new Point(Math.Max(0, selHeader.Width - _kindBadge.Width), Theme.S(2));
+            stack.Controls.Add(selHeader);
 
             var props = PropertyTable(5);
             _name = UiKit.TextBox(false, Theme.S(26));
-            _name.TextChanged += (s, e) => UpdateSelected(delegate(FreeElement el) { el.Name = _name.Text; }, true, false);
+            _name.TextChanged += (s, e) => UpdateSelected(delegate(FreeElement el) { el.Name = _name.Text; }, false, false);
+            _name.Leave += (s, e) => UpdateListItem();
             PropRow(props, 0, "名称", _name);
 
             var fontHost = new FlowLayoutPanel
@@ -325,52 +362,42 @@ namespace EasyLabel.UI
             PropRow(props, 4, "字体", _font);
             stack.Controls.Add(props);
 
-            var contentHost = new Panel
+            // ---------------------------------------------------------------- 内容
+            var contentHead = new Panel
             {
-                Height = Theme.S(112),
+                Height = Theme.S(26),
                 BackColor = Theme.Card,
-                Margin = new Padding(0, 0, 0, 6)
+                Margin = new Padding(0, Theme.S(4), 0, 0)
             };
-            var contentLabel = Theme.Label("内容", 8.8f, Theme.Muted);
-            contentLabel.AutoSize = false;
-            contentLabel.Dock = DockStyle.Top;
-            contentLabel.Height = Theme.S(20);
-            contentLabel.TextAlign = ContentAlignment.MiddleLeft;
-            _text = UiKit.TextBox(true, Theme.S(88));
-            _text.Dock = DockStyle.Fill;
+            var contentLabel = Theme.Label("内容", 9.4f, Theme.Text, FontStyle.Bold);
+            contentLabel.AutoSize = true;
+            contentLabel.Location = new Point(0, Theme.S(5));
+            _tokenBtn = SmallButton("插入占位符 ▾", Theme.S(126));
+            _tokenBtn.Height = Theme.S(24);
+            _tokenBtn.Font = Theme.Ui(8.4f);
+            _tokenBtn.Click += (s, e) => ShowTokenMenu();
+            contentHead.Controls.Add(contentLabel);
+            contentHead.Controls.Add(_tokenBtn);
+            contentHead.Resize += (s, e) =>
+                _tokenBtn.Location = new Point(Math.Max(0, contentHead.Width - _tokenBtn.Width), Theme.S(1));
+            stack.Controls.Add(contentHead);
+
+            _text = UiKit.TextBox(true, Theme.S(58));
             _text.AcceptsReturn = true;
             _text.ScrollBars = ScrollBars.Vertical;
             _text.Font = Theme.Ui(9.4f);
+            _text.Margin = new Padding(0, 0, 0, 4);
             _text.TextChanged += (s, e) => UpdateSelected(delegate(FreeElement el) { el.Content = _text.Text; }, false, false);
-            contentHost.Controls.Add(_text);
-            contentHost.Controls.Add(contentLabel);
-            stack.Controls.Add(contentHost);
+            stack.Controls.Add(_text);
 
-            _hint = Theme.Label("内容支持占位符：" + LabelTokens.HelpText, 8.2f, Theme.Muted);
+            _hint = Theme.Label("内容支持占位符，可点上方“插入占位符”。", 8.2f, Theme.Muted);
             _hint.AutoSize = false;
-            _hint.Height = Theme.S(44);
-            _hint.Margin = new Padding(0, 0, 0, 6);
+            _hint.Height = Theme.S(26);
+            _hint.Margin = new Padding(0, 0, 0, 8);
             stack.Controls.Add(_hint);
 
-            var actions = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoSize = true,
-                BackColor = Theme.Card,
-                Margin = new Padding(0, 0, 0, 6)
-            };
-            _duplicate = SmallButton("复制一份", Theme.S(94));
-            _duplicate.Click += (s, e) => DuplicateSelected();
-            _delete = SmallButton("删除", Theme.S(66));
-            _delete.Click += (s, e) => DeleteSelected();
-            actions.Controls.Add(_duplicate);
-            actions.Controls.Add(_delete);
-            stack.Controls.Add(actions);
-
             // ---------------------------------------------------------------- 位置与尺寸
-            stack.Controls.Add(SectionTitle("位置与尺寸（mm）"));
-            var position = QuadTable(new[] { "X", "Y", "宽", "高" },
+            var position = QuadTable(new[] { "X (mm)", "Y (mm)", "宽 (mm)", "高 (mm)" },
                 new Control[] { _x = SideNumeric(-60, 320), _y = SideNumeric(-60, 320),
                                 _w = SideNumeric(1, 320), _h = SideNumeric(1, 320) });
             _x.ValueChanged += (s, e) => ApplyNumbers();
@@ -379,46 +406,29 @@ namespace EasyLabel.UI
             _h.ValueChanged += (s, e) => ApplyNumbers();
             stack.Controls.Add(position);
 
+            // ---------------------------------------------------------------- 对齐
             stack.Controls.Add(SectionTitle("对齐到安全区"));
-            var alignRow = new FlowLayoutPanel
+            var alignGrid = new TableLayoutPanel
             {
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = true,
-                AutoSize = true,
-                BackColor = Theme.Card,
-                Margin = new Padding(0, 0, 0, 6)
-            };
-            alignRow.Controls.Add(AlignButton("左", LayoutAnchor.Left));
-            alignRow.Controls.Add(AlignButton("水平", LayoutAnchor.CenterHorizontal));
-            alignRow.Controls.Add(AlignButton("右", LayoutAnchor.Right));
-            alignRow.Controls.Add(AlignButton("上", LayoutAnchor.Top));
-            alignRow.Controls.Add(AlignButton("垂直", LayoutAnchor.CenterVertical));
-            alignRow.Controls.Add(AlignButton("下", LayoutAnchor.Bottom));
-            stack.Controls.Add(alignRow);
-
-            // ---------------------------------------------------------------- 网格与边距
-            stack.Controls.Add(SectionTitle("网格与边距"));
-            var snapRow = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoSize = true,
+                ColumnCount = 3,
+                RowCount = 2,
+                Height = Theme.S(60),
                 BackColor = Theme.Card,
                 Margin = new Padding(0, 0, 0, 4)
             };
-            _snap = UiKit.Check("网格吸附", true);
-            _snap.Width = Theme.S(92);
-            _snap.Margin = new Padding(0, Theme.S(4), Theme.S(6), 0);
-            _snap.CheckedChanged += (s, e) => _canvas.SnapEnabled = _snap.Checked;
-            _gridStep = UiKit.Combo();
-            _gridStep.Width = Theme.S(84);
-            _gridStep.Items.AddRange(new object[] { "0.5 mm", "1 mm", "2 mm", "5 mm" });
-            _gridStep.SelectedIndex = 0;
-            _gridStep.SelectedIndexChanged += (s, e) => _canvas.GridStep = GridStepMm();
-            snapRow.Controls.Add(_snap);
-            snapRow.Controls.Add(_gridStep);
-            stack.Controls.Add(snapRow);
+            for (int i = 0; i < 3; i++)
+                alignGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
+            alignGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(28)));
+            alignGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(28)));
+            alignGrid.Controls.Add(AlignCell("贴左", "元素左边缘贴安全区左边", LayoutAnchor.Left), 0, 0);
+            alignGrid.Controls.Add(AlignCell("水平居中", "左右居中（不改变宽度）", LayoutAnchor.CenterHorizontal), 1, 0);
+            alignGrid.Controls.Add(AlignCell("贴右", "元素右边缘贴安全区右边", LayoutAnchor.Right), 2, 0);
+            alignGrid.Controls.Add(AlignCell("贴上", "元素上边缘贴安全区上边", LayoutAnchor.Top), 0, 1);
+            alignGrid.Controls.Add(AlignCell("垂直居中", "上下居中（不改变高度）", LayoutAnchor.CenterVertical), 1, 1);
+            alignGrid.Controls.Add(AlignCell("贴下", "元素下边缘贴安全区下边", LayoutAnchor.Bottom), 2, 1);
+            stack.Controls.Add(alignGrid);
 
+            // ---------------------------------------------------------------- 页面边距（默认收起）
             var margins = QuadTable(new[] { "上", "下", "左", "右" },
                 new Control[] { _mt = SideNumeric(-20, 20), _mb = SideNumeric(-20, 20),
                                 _ml = SideNumeric(-20, 20), _mr = SideNumeric(0, 20) });
@@ -430,13 +440,22 @@ namespace EasyLabel.UI
             _mb.ValueChanged += (s, e) => ApplyMargins();
             _ml.ValueChanged += (s, e) => ApplyMargins();
             _mr.ValueChanged += (s, e) => ApplyMargins();
+            margins.Visible = false;
+
+            _marginToggle = UiKit.LinkButton("调整页面边距（mm） ▾");
+            _marginToggle.AutoSize = true;
+            _marginToggle.Margin = new Padding(0, Theme.S(8), 0, Theme.S(2));
+            _marginToggle.Click += (s, e) =>
+            {
+                margins.Visible = !margins.Visible;
+                _marginToggle.Text = margins.Visible ? "调整页面边距（mm） ▴" : "调整页面边距（mm） ▾";
+            };
+            stack.Controls.Add(_marginToggle);
             stack.Controls.Add(margins);
 
-            var note = Theme.Label(
-                "坐标以安全区左上角为原点。元素可以拖到标签外，超出部分打印时会被裁掉，用来手动补偿打印机偏移。",
-                8.2f, Theme.Muted);
+            var note = Theme.Label("坐标原点 = 安全区左上角；元素可拖出标签。", 8.2f, Theme.Muted);
             note.AutoSize = false;
-            note.Height = Theme.S(52);
+            note.Height = Theme.S(20);
             note.Margin = new Padding(0, Theme.S(2), 0, 0);
             stack.Controls.Add(note);
 
@@ -444,6 +463,94 @@ namespace EasyLabel.UI
             side.Resize += (s, e) => FitStack(stack, side);
             FitStack(stack, side);
             return side;
+        }
+
+        // ------------------------------------------------------------------ 工具条
+
+        private Control BuildToolbar()
+        {
+            var bar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                BackColor = Theme.Card,
+                Padding = new Padding(Theme.S(10), Theme.S(6), Theme.S(10), Theme.S(2))
+            };
+            bar.Paint += (s, e) =>
+            {
+                using (var pen = new Pen(Theme.Border))
+                    e.Graphics.DrawLine(pen, 0, bar.Height - 1, bar.Width, bar.Height - 1);
+            };
+
+            bar.Controls.Add(ToolButton("+ 文字", 74, "+ 一个文字块（内容支持占位符）",
+                (s, e) => AddElement(FreeElementKind.Text)));
+            bar.Controls.Add(ToolButton("+ 一维码", 84, "+ 一个一维码", (s, e) => AddElement(FreeElementKind.Barcode)));
+            bar.Controls.Add(ToolButton("+ 二维码", 84, "+ 一个二维码", (s, e) => AddElement(FreeElementKind.Qr)));
+            bar.Controls.Add(ToolSeparator());
+
+            bar.Controls.Add(_duplicateTool = ToolButton("复制", 56, "复制选中元素（Ctrl+D）", (s, e) => DuplicateSelected()));
+            _deleteTool = ToolButton("删除", 56, "删除选中元素（Delete）", (s, e) => DeleteSelected());
+            bar.Controls.Add(_deleteTool);
+            _layerUp = ToolButton("上移", 56, "往上挪一层：盖住其它元素（Ctrl+↑）",
+                (s, e) => MoveSelectedLayer(1));
+            _layerDown = ToolButton("下移", 56, "往下挪一层：被其它元素盖住（Ctrl+↓）",
+                (s, e) => MoveSelectedLayer(-1));
+            bar.Controls.Add(_layerUp);
+            bar.Controls.Add(_layerDown);
+            Button fillTool = ToolButton("铺满", 56, "把选中元素拉到整个安全区大小", (s, e) => FillSafeArea());
+            _selectionOnly.Add(fillTool);
+            bar.Controls.Add(fillTool);
+            bar.Controls.Add(ToolSeparator());
+
+            var snapHost = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                BackColor = Theme.Card,
+                Margin = new Padding(0)
+            };
+            _snap = UiKit.Check("网格吸附", true);
+            _snap.AutoSize = true;
+            _snap.Margin = new Padding(0, Theme.S(6), Theme.S(6), 0);
+            _snap.CheckedChanged += (s, e) => _canvas.SnapEnabled = _snap.Checked;
+            _gridStep = UiKit.Combo();
+            _gridStep.Width = Theme.S(84);
+            _gridStep.Margin = new Padding(0, Theme.S(4), 0, 0);
+            _gridStep.Items.AddRange(new object[] { "0.5 mm", "1 mm", "2 mm", "5 mm" });
+            _gridStep.SelectedIndex = 0;
+            _gridStep.SelectedIndexChanged += (s, e) => _canvas.GridStep = GridStepMm();
+            snapHost.Controls.Add(_snap);
+            snapHost.Controls.Add(_gridStep);
+            bar.Controls.Add(snapHost);
+
+            return bar;
+        }
+
+        private Button ToolButton(string text, int width, string tip, EventHandler onClick)
+        {
+            Button button = UiKit.SecondaryButton(text);
+            button.Size = new Size(Theme.S(width), Theme.S(30));
+            button.Font = Theme.Ui(8.8f);
+            button.Margin = new Padding(0, 0, Theme.S(6), Theme.S(4));
+            button.Click += onClick;
+            if (!string.IsNullOrEmpty(tip)) _tips.SetToolTip(button, tip);
+            return button;
+        }
+
+        private static Control ToolSeparator()
+        {
+            var line = new Panel
+            {
+                Width = 1,
+                Height = Theme.S(20),
+                BackColor = Theme.Border,
+                Margin = new Padding(Theme.S(2), Theme.S(5), Theme.S(8), 0)
+            };
+            return line;
         }
 
         private static Label Heading(string text)
@@ -459,8 +566,8 @@ namespace EasyLabel.UI
         {
             var label = Theme.Label(text, 9.4f, Theme.Text, FontStyle.Bold);
             label.AutoSize = false;
-            label.Height = Theme.S(26);
-            label.Margin = new Padding(0, Theme.S(10), 0, Theme.S(2));
+            label.Height = Theme.S(24);
+            label.Margin = new Padding(0, Theme.S(5), 0, Theme.S(2));
             return label;
         }
 
@@ -478,8 +585,8 @@ namespace EasyLabel.UI
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(58)));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             for (int i = 0; i < rows; i++)
-                table.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(34)));
-            table.Height = Theme.S(34) * rows;
+                table.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(32)));
+            table.Height = Theme.S(32) * rows;
             return table;
         }
 
@@ -527,14 +634,22 @@ namespace EasyLabel.UI
             return table;
         }
 
-        private Button AlignButton(string text, LayoutAnchor anchor)
+        private Button AlignCell(string text, string tip, LayoutAnchor anchor)
         {
-            Button button = SmallButton(text, text.Length > 2 ? Theme.S(62) : Theme.S(46));
+            Button button = UiKit.SecondaryButton(text);
+            button.Dock = DockStyle.Fill;
+            button.Font = Theme.Ui(8.6f);
+            button.Margin = new Padding(0, 0, Theme.S(4), Theme.S(4));
+            button.Enabled = false;
+            _selectionOnly.Add(button);
+            if (!string.IsNullOrEmpty(tip)) _tips.SetToolTip(button, tip);
             button.Click += (s, e) =>
             {
                 if (_canvas.SelectedIndex < 0) return;
                 _canvas.PushUndo();
                 _canvas.AlignSelected(anchor);
+                SyncNumbers();
+                UpdateListItem();
             };
             return button;
         }
@@ -615,6 +730,8 @@ namespace EasyLabel.UI
 
             _status = Theme.Label("", 8.6f, Theme.Muted);
             _status.AutoSize = false;
+            _status.AutoEllipsis = true;
+            _status.UseMnemonic = false;
             _status.Dock = DockStyle.Fill;
             _status.TextAlign = ContentAlignment.MiddleLeft;
 
@@ -625,44 +742,151 @@ namespace EasyLabel.UI
 
         // ------------------------------------------------------------------ 状态同步
 
+        private sealed class ElementItem
+        {
+            public int Index;
+            public FreeElementKind Kind;
+            public string Name;
+            public string Summary;
+            public string Size;
+
+            public override string ToString()
+            {
+                return (Index + 1) + ". " + Name + "  " + Summary;
+            }
+        }
+
+        private static Color KindColor(FreeElementKind kind)
+        {
+            return kind == FreeElementKind.Barcode ? Theme.Success
+                : (kind == FreeElementKind.Qr ? Theme.Warning : Theme.Accent);
+        }
+
+        private static Color KindSoft(FreeElementKind kind)
+        {
+            return kind == FreeElementKind.Barcode ? Color.FromArgb(232, 246, 238)
+                : (kind == FreeElementKind.Qr ? Color.FromArgb(253, 243, 226) : Theme.AccentSoft);
+        }
+
+        private static string KindTitle(FreeElementKind kind)
+        {
+            return kind == FreeElementKind.Barcode ? "一维码" : (kind == FreeElementKind.Qr ? "二维码" : "文字块");
+        }
+
         private void RefreshList()
         {
             if (_list == null) return;
+            int keep = _canvas.SelectedIndex;
             _syncing = true;
             try
             {
-                int keep = _canvas.SelectedIndex;
                 _list.BeginUpdate();
                 _list.Items.Clear();
                 for (int i = 0; i < LayoutResult.Elements.Count; i++)
-                    _list.Items.Add(Describe(i, LayoutResult.Elements[i]));
-                if (keep >= 0 && keep < _list.Items.Count) _list.SelectedIndex = keep;
+                    _list.Items.Add(BuildItem(i));
+                _list.SelectedIndex = keep >= 0 && keep < _list.Items.Count ? keep : -1;
                 _list.EndUpdate();
             }
             finally { _syncing = false; }
         }
 
-        private static string Describe(int index, FreeElement element)
+        private ElementItem BuildItem(int index)
         {
+            FreeElement element = LayoutResult.Elements[index];
             string name = string.IsNullOrWhiteSpace(element.Name)
-                ? element.KindName + (index + 1)
+                ? KindTitle(element.Kind) + (index + 1)
                 : element.Name.Trim();
-            string preview = (element.Content ?? "").Replace("\r", " ").Replace("\n", " ");
-            if (preview.Length > 14) preview = preview.Substring(0, 14) + "…";
-            return (index + 1) + ". " + name + "　" + preview;
+            string summary = (element.Content ?? "").Replace("\r", " ").Replace("\n", " ");
+            if (summary.Length > 20) summary = summary.Substring(0, 20) + "…";
+            if (summary.Length == 0) summary = "（空）";
+            return new ElementItem
+            {
+                Index = index,
+                Kind = element.Kind,
+                Name = name,
+                Summary = summary,
+                Size = element.Box.Width.ToString("0.0") + "×" + element.Box.Height.ToString("0.0")
+            };
         }
 
-        /// <summary>只刷新当前行的文字，拖动时不要整表重建。</summary>
+        /// <summary>只刷新当前元素一行，拖动/打字时不要整表重建。</summary>
         private void UpdateListItem()
         {
             if (_list == null) return;
             int index = _canvas.SelectedIndex;
             if (index < 0 || index >= _list.Items.Count || index >= LayoutResult.Elements.Count) return;
-            string text = Describe(index, LayoutResult.Elements[index]);
-            if (Convert.ToString(_list.Items[index]) == text) return;
             _syncing = true;
-            try { _list.Items[index] = text; }
+            try { _list.Items[index] = BuildItem(index); }
             finally { _syncing = false; }
+        }
+
+        private void DrawElementItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= _list.Items.Count) return;
+            var item = _list.Items[e.Index] as ElementItem;
+            if (item == null) return;
+
+            Graphics g = e.Graphics;
+            Rectangle bounds = e.Bounds;
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            Color color = KindColor(item.Kind);
+
+            using (var back = new SolidBrush(selected ? Theme.AccentSoft : Theme.Card))
+                g.FillRectangle(back, bounds);
+            using (var bar = new SolidBrush(color))
+                g.FillRectangle(bar, new Rectangle(bounds.X, bounds.Y, Theme.S(4), bounds.Height - 1));
+            if (e.Index < _list.Items.Count - 1)
+            {
+                using (var line = new Pen(Theme.Border))
+                    g.DrawLine(line, bounds.Left + Theme.S(4), bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+            }
+
+            int pad = Theme.S(8);
+            int numX = bounds.X + Theme.S(9);
+            int x = numX + Theme.S(15);
+
+            using (var numFont = Theme.Ui(8.2f))
+                TextRenderer.DrawText(g, (e.Index + 1).ToString(), numFont,
+                    new Rectangle(numX, bounds.Y, Theme.S(14), bounds.Height), Theme.Muted,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+            using (var sizeFont = Theme.Ui(8.2f))
+            {
+                Size size = TextRenderer.MeasureText(item.Size, sizeFont);
+                TextRenderer.DrawText(g, item.Size, sizeFont,
+                    new Rectangle(bounds.Right - size.Width - pad, bounds.Y, size.Width, bounds.Height),
+                    Theme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+                using (var nameFont = Theme.Ui(9.2f, FontStyle.Bold))
+                {
+                    int nameMax = Math.Max(Theme.S(36), bounds.Width / 2 - Theme.S(10));
+                    Size nameSize = TextRenderer.MeasureText(item.Name, nameFont);
+                    int nameWidth = Math.Min(nameSize.Width, nameMax);
+                    TextRenderer.DrawText(g, item.Name, nameFont,
+                        new Rectangle(x, bounds.Y, nameWidth, bounds.Height),
+                        selected ? Theme.AccentDark : Theme.Text,
+                        TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+
+                    int summaryX = x + nameWidth + Theme.S(6);
+                    int summaryWidth = bounds.Right - size.Width - pad - summaryX - Theme.S(4);
+                    if (summaryWidth > Theme.S(24))
+                    {
+                        using (var summaryFont = Theme.Ui(8.4f))
+                            TextRenderer.DrawText(g, item.Summary, summaryFont,
+                                new Rectangle(summaryX, bounds.Y, summaryWidth, bounds.Height), Theme.Muted,
+                                TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                    }
+                }
+            }
+        }
+
+        /// <summary>按钮禁用时把文字一起变浅，扁平样式否则看不出灰。</summary>
+        private static void SetEnabledLook(Button button, bool enabled)
+        {
+            if (button == null) return;
+            button.Enabled = enabled;
+            button.ForeColor = enabled ? Theme.Text : Color.FromArgb(176, 182, 192);
+            button.Cursor = enabled ? Cursors.Hand : Cursors.Default;
         }
 
         private void SyncFromCanvas()
@@ -684,7 +908,11 @@ namespace EasyLabel.UI
             _align.Enabled = _font.Enabled = _fontMm.Enabled = has;
             _autoFont.Enabled = has;
             _x.Enabled = _y.Enabled = _w.Enabled = _h.Enabled = has;
-            _delete.Enabled = _duplicate.Enabled = has;
+            _tokenBtn.Enabled = has;
+            foreach (Control button in _selectionOnly) SetEnabledLook(button as Button, has);
+            SetEnabledLook(_duplicateTool, has);
+            SetEnabledLook(_deleteTool, has);
+
             if (!has)
             {
                 _syncing = true;
@@ -694,6 +922,14 @@ namespace EasyLabel.UI
                     _text.Text = "";
                 }
                 finally { _syncing = false; }
+                if (_kindBadge != null)
+                {
+                    _kindBadge.Text = "未选中";
+                    _kindBadge.BackColor = Theme.GridAlt;
+                    _kindBadge.ForeColor = Theme.Muted;
+                }
+                SetEnabledLook(_layerUp, false);
+                SetEnabledLook(_layerDown, false);
                 if (_status != null) _status.Text = _canvas.GetStatusText();
                 return;
             }
@@ -705,15 +941,13 @@ namespace EasyLabel.UI
                 _text.Text = element.Content ?? "";
                 bool auto = element.FontSizeMm <= 0;
                 _autoFont.Checked = auto;
-                _fontMm.Enabled = !auto;
                 if (!auto) _fontMm.Value = ClampValue(_fontMm, (decimal)element.FontSizeMm);
                 bool isText = element.Kind == FreeElementKind.Text;
-                // 字号/对齐只对文字块生效；字体对一维码明文也生效，所以保留可用。
+                // 字号/加粗/对齐只对文字块生效；字体对一维码明文也生效，所以保留可用。
                 _autoFont.Enabled = isText;
                 _fontMm.Enabled = isText && !auto;
                 _bold.Enabled = isText;
                 _align.Enabled = isText;
-                _font.Enabled = true;
                 _bold.Checked = element.Bold;
                 _align.SelectedIndex = (int)element.Align;
                 string family = string.IsNullOrWhiteSpace(element.FontFamily) ? "" : element.FontFamily;
@@ -731,10 +965,18 @@ namespace EasyLabel.UI
                     }
                     _font.SelectedIndex = index;
                 }
+                if (_kindBadge != null)
+                {
+                    _kindBadge.Text = KindTitle(element.Kind);
+                    _kindBadge.BackColor = KindSoft(element.Kind);
+                    _kindBadge.ForeColor = KindColor(element.Kind);
+                }
+                SetEnabledLook(_layerUp, _canvas.SelectedIndex < LayoutResult.Elements.Count - 1);
+                SetEnabledLook(_layerDown, _canvas.SelectedIndex > 0);
                 SyncNumbers();
                 _hint.Text = isText
-                    ? "内容支持占位符：" + LabelTokens.HelpText
-                    : "同一条码/二维码可以放多个，内容各自独立；也可以引用 {text}。";
+                    ? "支持占位符，点上方“插入占位符”挑一个。"
+                    : "同一种码可放多个，内容各自独立，也可引用 {text}。";
             }
             finally { _syncing = false; }
 
@@ -777,10 +1019,13 @@ namespace EasyLabel.UI
             if (_syncing) return;
             FreeElement element = Selected;
             if (element == null) return;
-            _canvas.PushUndo();
+            // 连点微调箭头时不要每一下都压撤销栈，600 ms 内合并成一步。
+            DateTime now = DateTime.UtcNow;
+            if ((now - _lastNumberUndo).TotalMilliseconds > 600) _canvas.PushUndo();
+            _lastNumberUndo = now;
             element.Box = new RectangleF((float)_x.Value, (float)_y.Value, (float)_w.Value, (float)_h.Value);
             _canvas.NotifyLayoutChanged(false);
-            RefreshList();
+            UpdateListItem();
         }
 
         private void ApplyMargins()
@@ -829,7 +1074,9 @@ namespace EasyLabel.UI
             RefreshList();
             _canvas.NotifyLayoutChanged(true);
             SyncFromCanvas();
-            if (kind == FreeElementKind.Text) _text.Focus();
+            // 文字块加完多半是马上要写内容；码类元素内容已经是占位符，留着焦点方便直接拖。
+            if (kind == FreeElementKind.Text) EditContent();
+            else _canvas.Focus();
         }
 
         private void DuplicateSelected()
@@ -844,13 +1091,19 @@ namespace EasyLabel.UI
             }
             _canvas.PushUndo();
             FreeElement copy = element.Clone();
-            copy.Box = new RectangleF(element.Box.X + 1.5f, element.Box.Y + 1.5f, element.Box.Width, element.Box.Height);
-            copy.Name = (string.IsNullOrWhiteSpace(element.Name) ? element.KindName : element.Name) + " 副本";
+            RectangleF allow = _canvas.AllowArea;
+            float x = element.Box.X + 1.5f;
+            float y = element.Box.Y + 1.5f;
+            if (x + copy.Box.Width > allow.Right) x = Math.Max(allow.Left, allow.Right - copy.Box.Width);
+            if (y + copy.Box.Height > allow.Bottom) y = Math.Max(allow.Top, allow.Bottom - copy.Box.Height);
+            copy.Box = new RectangleF(x, y, element.Box.Width, element.Box.Height);
+            copy.Name = (string.IsNullOrWhiteSpace(element.Name) ? element.KindName : element.Name.Trim()) + " 副本";
             LayoutResult.Elements.Add(copy);
             _canvas.SelectedIndex = LayoutResult.Elements.Count - 1;
             RefreshList();
             _canvas.NotifyLayoutChanged(true);
             SyncFromCanvas();
+            _canvas.Focus();
         }
 
         private void DeleteSelected()
@@ -864,6 +1117,87 @@ namespace EasyLabel.UI
             RefreshList();
             _canvas.NotifyLayoutChanged(true);
             SyncFromCanvas();
+            _canvas.Focus();
+        }
+
+        /// <summary>delta = +1 往上一层（画在更前面），-1 往下一层。</summary>
+        private void MoveSelectedLayer(int delta)
+        {
+            int index = _canvas.SelectedIndex;
+            int target = index + delta;
+            if (index < 0 || target < 0 || target >= LayoutResult.Elements.Count) return;
+            _canvas.PushUndo();
+            FreeElement element = LayoutResult.Elements[index];
+            LayoutResult.Elements.RemoveAt(index);
+            LayoutResult.Elements.Insert(target, element);
+            _canvas.SelectedIndex = target;
+            RefreshList();
+            _canvas.NotifyLayoutChanged(true);
+            SyncFromCanvas();
+            _canvas.Focus();
+        }
+
+        private void FillSafeArea()
+        {
+            FreeElement element = Selected;
+            if (element == null) return;
+            _canvas.PushUndo();
+            RectangleF area = _canvas.SafeArea;
+            if (element.Kind == FreeElementKind.Qr)
+            {
+                // 二维码必须正方形，取短边并居中。
+                float side = Math.Min(area.Width, area.Height);
+                element.Box = new RectangleF((area.Width - side) / 2f, (area.Height - side) / 2f, side, side);
+            }
+            else
+            {
+                element.Box = new RectangleF(0, 0, area.Width, area.Height);
+            }
+            SyncNumbers();
+            UpdateListItem();
+            _canvas.NotifyLayoutChanged(false);
+            _canvas.Focus();
+        }
+
+        /// <summary>双击列表 / 按 F2 改名称。</summary>
+        private void RenameSelected()
+        {
+            if (_name == null || !_name.Enabled) return;
+            _name.Focus();
+            _name.SelectAll();
+        }
+
+        /// <summary>双击元素 / 按 F2 改内容。</summary>
+        private void EditContent()
+        {
+            if (_text == null || !_text.Enabled) return;
+            _text.Focus();
+            _text.SelectAll();
+        }
+
+        private void ShowTokenMenu()
+        {
+            if (_tokenBtn == null) return;
+            var menu = new ContextMenuStrip { ShowImageMargin = false };
+            foreach (KeyValuePair<string, string> pair in LabelTokens.Palette())
+            {
+                var item = new ToolStripMenuItem(pair.Key + "　" + pair.Value) { Tag = pair.Key };
+                item.Click += (s, e) => InsertToken(Convert.ToString(((ToolStripMenuItem)s).Tag));
+                menu.Items.Add(item);
+            }
+            menu.Show(_tokenBtn, new Point(0, _tokenBtn.Height));
+        }
+
+        private void InsertToken(string token)
+        {
+            if (_text == null || string.IsNullOrEmpty(token)) return;
+            string value = _text.Text ?? "";
+            int start = _text.SelectionStart;
+            if (start < 0 || start > value.Length) start = value.Length;
+            _text.Text = value.Insert(start, token);
+            _text.SelectionStart = Math.Min(_text.TextLength, start + token.Length);
+            _text.SelectionLength = 0;
+            _text.Focus();
         }
 
         private float GridStepMm()
@@ -903,10 +1237,76 @@ namespace EasyLabel.UI
             Close();
         }
 
+        private ContextMenuStrip BuildCanvasMenu()
+        {
+            var menu = new ContextMenuStrip();
+            var edit = new ToolStripMenuItem("编辑内容（F2）");
+            edit.Click += (s, e) => EditContent();
+            var duplicate = new ToolStripMenuItem("复制一份（Ctrl+D）");
+            duplicate.Click += (s, e) => DuplicateSelected();
+            var remove = new ToolStripMenuItem("删除（Delete）");
+            remove.Click += (s, e) => DeleteSelected();
+            var forward = new ToolStripMenuItem("上移一层（Ctrl+↑）");
+            forward.Click += (s, e) => MoveSelectedLayer(1);
+            var backward = new ToolStripMenuItem("下移一层（Ctrl+↓）");
+            backward.Click += (s, e) => MoveSelectedLayer(-1);
+
+            menu.Items.Add(edit);
+            menu.Items.Add(duplicate);
+            menu.Items.Add(remove);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(forward);
+            menu.Items.Add(backward);
+            menu.Items.Add(new ToolStripSeparator());
+
+            var align = new[]
+            {
+                new object[] { "贴左", LayoutAnchor.Left },
+                new object[] { "水平居中", LayoutAnchor.CenterHorizontal },
+                new object[] { "贴右", LayoutAnchor.Right },
+                new object[] { "贴上", LayoutAnchor.Top },
+                new object[] { "垂直居中", LayoutAnchor.CenterVertical },
+                new object[] { "贴下", LayoutAnchor.Bottom }
+            };
+            foreach (object[] pair in align)
+            {
+                var anchor = (LayoutAnchor)pair[1];
+                var item = new ToolStripMenuItem("对齐 · " + pair[0]) { Tag = anchor };
+                item.Click += (s, e) =>
+                {
+                    if (_canvas.SelectedIndex < 0) return;
+                    _canvas.PushUndo();
+                    _canvas.AlignSelected(anchor);
+                    SyncNumbers();
+                    UpdateListItem();
+                };
+                menu.Items.Add(item);
+            }
+            var fill = new ToolStripMenuItem("铺满安全区") { Tag = "fill" };
+            fill.Click += (s, e) => FillSafeArea();
+            menu.Items.Add(fill);
+
+            menu.Opening += (s, e) =>
+            {
+                bool has = _canvas.SelectedIndex >= 0;
+                edit.Enabled = has;
+                duplicate.Enabled = has;
+                remove.Enabled = has;
+                forward.Enabled = has && _canvas.SelectedIndex < LayoutResult.Elements.Count - 1;
+                backward.Enabled = has && _canvas.SelectedIndex > 0;
+                foreach (ToolStripItem item in menu.Items)
+                {
+                    if (item is ToolStripMenuItem && item.Tag != null) item.Enabled = has;
+                }
+            };
+            return menu;
+        }
+
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            // 只在画布有焦点时接管撤销/删除：在内容框里按 Ctrl+Z 应该是撤销打字。
-            if (!_canvas.Focused) return base.ProcessCmdKey(ref msg, keyData);
+            // 只在画布/元素列表有焦点时接管：在内容框里按 Ctrl+Z 应该是撤销打字。
+            bool active = _canvas.Focused || (_list != null && _list.Focused);
+            if (!active) return base.ProcessCmdKey(ref msg, keyData);
             if (keyData == (Keys.Control | Keys.Z))
             {
                 _canvas.Undo();
@@ -921,9 +1321,29 @@ namespace EasyLabel.UI
                 SyncFromCanvas();
                 return true;
             }
+            if (keyData == (Keys.Control | Keys.D))
+            {
+                DuplicateSelected();
+                return true;
+            }
             if (keyData == Keys.Delete)
             {
                 DeleteSelected();
+                return true;
+            }
+            if (keyData == Keys.F2)
+            {
+                EditContent();
+                return true;
+            }
+            if (keyData == (Keys.Control | Keys.Up))
+            {
+                MoveSelectedLayer(1);
+                return true;
+            }
+            if (keyData == (Keys.Control | Keys.Down))
+            {
+                MoveSelectedLayer(-1);
                 return true;
             }
             return base.ProcessCmdKey(ref msg, keyData);
@@ -1088,16 +1508,14 @@ namespace EasyLabel.UI
 
         public string GetStatusText()
         {
-            RectangleF area = SafeArea;
-            string safe = "安全区 " + area.Width.ToString("0.0") + " × " + area.Height.ToString("0.0") + " mm";
             FreeElement element = Selected;
             if (element == null)
-                return safe + " · 点元素选中，拖动移动、拖角缩放，方向键微调（Shift 1 mm）";
+                return "共 " + CurrentLayout.Elements.Count + " 个元素　·　拖动移动、拖角缩放，方向键微调（Shift 1 mm）";
             string name = string.IsNullOrWhiteSpace(element.Name) ? element.KindName : element.Name.Trim();
             string outside = IsOutsideLabel(element.Box) ? "　·　超出标签，打印会被裁掉" : "";
-            return name + "  X " + element.Box.X.ToString("0.0") + "  Y " + element.Box.Y.ToString("0.0") +
-                   "  宽 " + element.Box.Width.ToString("0.0") + "  高 " + element.Box.Height.ToString("0.0") +
-                   " mm　·　" + safe + outside;
+            return name + "　X " + element.Box.X.ToString("0.0") + "　Y " + element.Box.Y.ToString("0.0") +
+                   "　" + element.Box.Width.ToString("0.0") + "×" + element.Box.Height.ToString("0.0") + " mm" +
+                   outside + "　·　第 " + (_selected + 1) + "/" + CurrentLayout.Elements.Count + " 层";
         }
 
         private bool IsOutsideLabel(RectangleF r)
@@ -1177,6 +1595,9 @@ namespace EasyLabel.UI
             using (var border = new Pen(Color.FromArgb(150, 158, 170), 1))
                 g.DrawRectangle(border, x, y, w, h);
 
+            FreeElement moving = Selected;
+            if (_dragging && moving != null) DrawDragHint(g, moving.Box);
+
             if (!string.IsNullOrEmpty(_lastError))
             {
                 using (var font = Theme.Ui(8.5f))
@@ -1185,6 +1606,29 @@ namespace EasyLabel.UI
                         new Rectangle(Theme.S(12), Height - Theme.S(30), Width - Theme.S(24), Theme.S(24)),
                         Theme.Error, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
                 }
+            }
+        }
+
+        /// <summary>拖动/缩放时在框旁边浮出实时位置与尺寸，不写死在标签里。</summary>
+        private void DrawDragHint(Graphics g, RectangleF box)
+        {
+            string text = "X " + box.X.ToString("0.0") + "　Y " + box.Y.ToString("0.0") +
+                          "　" + box.Width.ToString("0.0") + " × " + box.Height.ToString("0.0") + " mm";
+            using (var font = Theme.Ui(8.6f))
+            {
+                Size size = TextRenderer.MeasureText(text, font);
+                RectangleF target = ToScreen(box);
+                int w = size.Width + Theme.S(14);
+                int h = size.Height + Theme.S(6);
+                int x = Math.Max(Theme.S(4), Math.Min((int)target.Left, Width - w - Theme.S(4)));
+                int y = (int)target.Top - h - Theme.S(6);
+                if (y < Theme.S(4)) y = (int)target.Bottom + Theme.S(6);
+                if (y + h > Height - Theme.S(4)) y = Math.Max(Theme.S(4), (int)target.Bottom - h - Theme.S(6));
+                var rect = new Rectangle(x, y, w, h);
+                using (var back = new SolidBrush(Color.FromArgb(226, 32, 41, 55)))
+                    g.FillRectangle(back, rect);
+                TextRenderer.DrawText(g, text, font, rect, Color.White,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             }
         }
 
@@ -1386,6 +1830,7 @@ namespace EasyLabel.UI
             _dragUndoPushed = false;
             _dragStart = e.Location;
 
+            bool canDrag = e.Button == MouseButtons.Left;
             for (int i = CurrentLayout.Elements.Count - 1; i >= 0; i--)
             {
                 RectangleF screen = ToScreen(CurrentLayout.Elements[i].Box);
@@ -1393,6 +1838,7 @@ namespace EasyLabel.UI
                 if (handle != Grip.None)
                 {
                     SelectedIndex = i;
+                    if (!canDrag) return;
                     _grip = handle;
                     _dragRect = CurrentLayout.Elements[i].Box;
                     _dragging = true;
@@ -1401,6 +1847,7 @@ namespace EasyLabel.UI
                 if (screen.Contains(e.Location))
                 {
                     SelectedIndex = i;
+                    if (!canDrag) return;
                     _grip = Grip.Move;
                     _dragRect = CurrentLayout.Elements[i].Box;
                     _dragging = true;
@@ -1415,11 +1862,9 @@ namespace EasyLabel.UI
         {
             base.OnMouseDoubleClick(e);
             FreeElement element = Selected;
-            if (element != null && element.Kind == FreeElementKind.Text)
-            {
-                var handler = ElementActivated;
-                if (handler != null) handler(this, EventArgs.Empty);
-            }
+            if (element == null) return;
+            var handler = ElementActivated;
+            if (handler != null) handler(this, EventArgs.Empty);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)

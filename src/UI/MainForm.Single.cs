@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -318,8 +318,8 @@ namespace EasyLabel.UI
             freeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             var freeHint = Theme.Label(
-                "一张标签里可以放多个文字块，再配一维码和二维码，位置尺寸都随意（毫米）。\r\n" +
-                "文字块内容支持 {text} {barcode} {qr} {date} {time} {row} 等占位符。",
+                "一张标签可放多个文字块、多个一维码/二维码，位置尺寸按毫米随意摆，层级可调。\r\n" +
+                "内容支持 {text} {barcode} {qr} {date} {time} {row} 等占位符，编辑器里可一键插入。",
                 8.3f, Theme.Muted);
             freeHint.AutoSize = false;
             freeHint.Dock = DockStyle.Fill;
