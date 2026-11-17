@@ -39,6 +39,7 @@ namespace EasyLabel.UI
         private NumericUpDown _offsetY;
         private Button _testPrint;
         private CheckBox _autoCheckUpdate;
+        private CheckBox _autoDownloadUpdate;
         private TextBox _updateFeed;
         private bool _settingsUiLoaded;
 
@@ -341,8 +342,14 @@ namespace EasyLabel.UI
 
         private void BuildUpdateCard(FlowLayoutPanel flow)
         {
-            var card = AddCard(flow, "软件更新", 206);
-            var table = UiKit.FormTable(4);
+            var card = AddCard(flow, "软件更新", 256);
+            // 这个卡片行数多，交给下面的 SizeChanged 按表格实际高度撑开，不再走 PreferredSize 自适应。
+            card.AutoFitHeight = false;
+            var table = UiKit.FormTable(5);
+            // 五行内容改用“按内容高度撑开”，最后一行的按钮才不会被压掉。
+            table.Dock = DockStyle.Top;
+            table.AutoSize = true;
+            table.AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
             _autoCheckUpdate = UiKit.Check("启动时自动检查更新（每天最多一次）", _settings.AutoCheckUpdate);
             _autoCheckUpdate.CheckedChanged += (s, e) =>
@@ -353,6 +360,15 @@ namespace EasyLabel.UI
             table.Controls.Add(_autoCheckUpdate, 0, 0);
             table.SetColumnSpan(_autoCheckUpdate, 2);
 
+            _autoDownloadUpdate = UiKit.Check("发现新版本时自动下载，在左下角版本号处提示安装", _settings.AutoDownloadUpdate);
+            _autoDownloadUpdate.CheckedChanged += (s, e) =>
+            {
+                if (_loadingUi) return;
+                _settings.AutoDownloadUpdate = _autoDownloadUpdate.Checked;
+            };
+            table.Controls.Add(_autoDownloadUpdate, 0, 1);
+            table.SetColumnSpan(_autoDownloadUpdate, 2);
+
             _updateFeed = UiKit.TextBox(false, 28);
             _updateFeed.Dock = DockStyle.Fill;
             _updateFeed.Text = _settings.UpdateFeedUrl ?? "";
@@ -361,7 +377,7 @@ namespace EasyLabel.UI
                 if (_loadingUi) return;
                 _settings.UpdateFeedUrl = (_updateFeed.Text ?? "").Trim();
             };
-            UiKit.AddRow(table, 1, "更新地址", _updateFeed, false, true);
+            UiKit.AddRow(table, 2, "更新地址", _updateFeed, false, true);
 
             var hint = Theme.Label(
                 "留空即用默认地址：项目 Release 发布页（" + UpdateService.ReleasesUrl + "）。\r\n" +
@@ -371,7 +387,7 @@ namespace EasyLabel.UI
             hint.Dock = DockStyle.Fill;
             hint.MinimumSize = new Size(0, 44);
             hint.Margin = new Padding(0, 8, 0, 2);
-            table.Controls.Add(hint, 0, 2);
+            table.Controls.Add(hint, 0, 3);
             table.SetColumnSpan(hint, 2);
 
             var row = new FlowLayoutPanel
@@ -399,8 +415,15 @@ namespace EasyLabel.UI
             row.Controls.Add(check);
             row.Controls.Add(reset);
             row.Controls.Add(releases);
-            table.Controls.Add(row, 0, 3);
+            table.Controls.Add(row, 0, 4);
             table.SetColumnSpan(row, 2);
+
+            // 表格高度要等布局后才算得准；跟着它把卡片撑开，避免最后一行按钮被裁掉。
+            table.SizeChanged += (s, e) =>
+            {
+                int needed = table.Bottom + card.Content.Padding.Bottom + 44 + 2;
+                if (card.Height < needed) card.Height = needed;
+            };
 
             card.Content.Controls.Add(table);
         }
@@ -482,6 +505,7 @@ namespace EasyLabel.UI
                 _settingsBarcodeScale.Value = Math.Max(70, Math.Min(130, _settings.BarcodeHeightPercent));
                 _settingsQrScale.Value = Math.Max(70, Math.Min(130, _settings.QrSizePercent));
                 if (_autoCheckUpdate != null) _autoCheckUpdate.Checked = _settings.AutoCheckUpdate;
+                if (_autoDownloadUpdate != null) _autoDownloadUpdate.Checked = _settings.AutoDownloadUpdate;
                 if (_updateFeed != null) _updateFeed.Text = _settings.UpdateFeedUrl ?? "";
                 UpdateNetworkState();
                 UpdatePrinterHint();
@@ -531,6 +555,7 @@ namespace EasyLabel.UI
             _settings.BarcodeHeightPercent = (int)_settingsBarcodeScale.Value;
             _settings.QrSizePercent = (int)_settingsQrScale.Value;
             if (_autoCheckUpdate != null) _settings.AutoCheckUpdate = _autoCheckUpdate.Checked;
+            if (_autoDownloadUpdate != null) _settings.AutoDownloadUpdate = _autoDownloadUpdate.Checked;
             if (_updateFeed != null) _settings.UpdateFeedUrl = (_updateFeed.Text ?? "").Trim();
             _settings.Normalize();
         }

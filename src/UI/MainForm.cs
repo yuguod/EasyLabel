@@ -90,6 +90,8 @@ namespace EasyLabel.UI
                             "，窗口=" + Width + "x" + Height);
                 // 上次在线更新留下的 .old 备份与旧临时包，趁启动清掉。
                 UpdateService.CleanupAfterUpdate();
+                // 先看有没有上次下载好的更新包；随后再静默检查有没有更新的版本。
+                RestorePendingUpdate();
                 StartBackgroundUpdateCheck();
             };
             FormClosing += (s, e) =>
@@ -202,7 +204,7 @@ namespace EasyLabel.UI
             };
             version.FlatAppearance.BorderSize = 0;
             version.FlatAppearance.MouseOverBackColor = Theme.AccentSoft;
-            version.Click += (s, e) => OpenUpdateDialog();
+            version.Click += (s, e) => VersionLinkClicked();
             _versionLink = version;
             sidebar.Controls.Add(version);
             sidebar.Controls.Add(navHost);

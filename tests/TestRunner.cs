@@ -43,6 +43,7 @@ internal static class TestRunner
         TestLayoutHelpers();
         TestZplCopies();
         TestSequence();
+        TestXlsxExport();
         TestTemplates();
         TestZplTemplates();
         TestImportPrint();
@@ -849,6 +850,61 @@ internal static class TestRunner
             "sequence no padding", "");
     }
 
+    private static void TestXlsxExport()
+    {
+        string path = Path.Combine(_outDir, "sequence-export.xlsx");
+        if (File.Exists(path)) File.Delete(path);
+
+        var values = new List<string> { "20261117DLX0001", "20261117DLX0002", "A&B<C>\"D\"", "带中文的内容" };
+        XlsxWriter.WriteList(path, "序列", "条码内容", values);
+        Check(File.Exists(path) && new FileInfo(path).Length > 800, "xlsx file written",
+            new FileInfo(path).Length + " bytes");
+
+        using (var zip = System.IO.Compression.ZipFile.OpenRead(path))
+        {
+            Check(zip.GetEntry("[Content_Types].xml") != null, "xlsx content types", "");
+            Check(zip.GetEntry("xl/workbook.xml") != null, "xlsx workbook part", "");
+            Check(zip.GetEntry("xl/styles.xml") != null, "xlsx styles part", "");
+            var sheetEntry = zip.GetEntry("xl/worksheets/sheet1.xml");
+            Check(sheetEntry != null, "xlsx sheet part", "");
+            if (sheetEntry == null) return;
+
+            string sheet;
+            using (var reader = new StreamReader(sheetEntry.Open()))
+                sheet = reader.ReadToEnd();
+
+            Check(sheet.Contains("20261117DLX0001"), "xlsx contains first value", "");
+            Check(sheet.Contains("带中文的内容"), "xlsx keeps chinese", "");
+            Check(sheet.Contains("A&amp;B&lt;C&gt;&quot;D&quot;"), "xlsx escapes xml", "");
+            Check(sheet.Contains("<c r=\"A1\" s=\"1\""), "xlsx header bold style", "");
+            Check(sheet.Contains("<row r=\"5\">"), "xlsx row count includes header", "");
+            try
+            {
+                System.Xml.Linq.XDocument.Parse(sheet);
+                Check(true, "xlsx sheet xml parses", "");
+            }
+            catch (Exception ex)
+            {
+                Check(false, "xlsx sheet xml parses", ex.Message);
+            }
+        }
+
+        // 20000 行也要能写出来（批量序列上限）
+        string big = Path.Combine(_outDir, "sequence-export-big.xlsx");
+        if (File.Exists(big)) File.Delete(big);
+        var many = SequenceGenerator.Build(new SequenceSpec
+        {
+            Prefix = "20261117DLX",
+            Start = 1,
+            Step = 1,
+            Digits = 5,
+            Count = SequenceGenerator.MaxCount
+        });
+        XlsxWriter.WriteList(big, "序列", "条码内容", many);
+        Check(File.Exists(big) && new FileInfo(big).Length > 200 * 1024, "xlsx writes 20000 rows",
+            new FileInfo(big).Length + " bytes");
+    }
+
     private static void TestZplCopies()    {
         var content = new LabelContent { Text = "ZPL COPIES", ShowBarcode = false, ShowQr = false };
         var options = new RenderOptions { Dpi = 203, LayoutMode = LayoutMode.TextOnly };
@@ -1552,6 +1608,37 @@ internal static class TestRunner
         UpdateInfo fromBody = UpdateService.ParseManifest(bodyHash, out error);
         Check(fromBody != null && fromBody.Sha256 == new string('b', 64),
             "更新：发布说明里的 SHA-256 被采用", fromBody == null ? error : fromBody.Sha256);
+
+        TestUpdateStaging();
+    }
+
+    /// <summary>后台自动下载的暂存目录：按版本分开、能识别、清理时不误删 ready-*。</summary>
+    private static void TestUpdateStaging()
+    {
+        string ready = UpdateService.ReadyRoot("9.9.9");
+        Check(ready.EndsWith("ready-9.9.9", StringComparison.OrdinalIgnoreCase), "更新：暂存目录按版本命名", ready);
+
+        string found;
+        Check(!UpdateService.TryGetStaged("9.9.9", out found), "更新：还没下载时判定为未就绪", found ?? "");
+
+        Directory.CreateDirectory(ready);
+        File.WriteAllText(Path.Combine(ready, "EasyLabel.exe"), "stub");
+        Check(UpdateService.TryGetStaged("9.9.9", out found) && found == ready,
+            "更新：有 EasyLabel.exe 才算就绪", found ?? "");
+        Check(!UpdateService.TryGetStaged("9.9.8", out found), "更新：版本不同不认", found ?? "");
+
+        // 启动清理会删一天以上的临时包，但不能删等待安装的 ready-*
+        Directory.SetLastWriteTime(ready, DateTime.Now.AddDays(-5));
+        UpdateService.CleanupAfterUpdate();
+        Check(Directory.Exists(ready), "更新：启动清理保留 ready-* 暂存包", ready);
+
+        UpdateService.PruneStaged("");
+        Check(!Directory.Exists(ready), "更新：清理旧版本暂存包", ready);
+
+        // 版本号里有非法字符时也不会把路径写坏
+        string weirdName = Path.GetFileName(UpdateService.ReadyRoot("1.2/3"));
+        Check(weirdName.IndexOf('/') < 0 && weirdName.IndexOf('\\') < 0 && weirdName.Contains("1.2_3"),
+            "更新：暂存目录名过滤非法字符", weirdName);
     }
 
     private static void TestLabelary()

@@ -61,6 +61,7 @@ namespace EasyLabel.Core
     {
         public string Root;
         public string Error;
+        public bool Canceled;
         public bool Success { get { return !string.IsNullOrEmpty(Root); } }
     }
 
@@ -577,6 +578,119 @@ namespace EasyLabel.Core
             return result;
         }
 
+        // ---------------------------------------------------------------- 预下载（后台准备好，等用户安装）
+
+        /// <summary>已下载并解包、等待安装的目录；按版本分开放，重启后仍可复用。</summary>
+        public static string ReadyRoot(string version)
+        {
+            return Path.Combine(StagingRoot, "ready-" + SafeVersion(version));
+        }
+
+        /// <summary>这个版本是否已经准备好（目录里确实有 EasyLabel.exe）。</summary>
+        public static bool TryGetStaged(string version, out string root)
+        {
+            root = null;
+            if (string.IsNullOrWhiteSpace(version)) return false;
+            string dir = ReadyRoot(version);
+            if (!File.Exists(Path.Combine(dir, "EasyLabel.exe"))) return false;
+            root = dir;
+            return true;
+        }
+
+        /// <summary>
+        /// 下载 + 校验 + 解包，把结果放到 ready 目录，返回可直接交给 ApplyAndRestart 的目录。
+        /// 后台自动更新与“立即更新”共用这一条路径，保证下次启动能直接安装。
+        /// </summary>
+        public static UpdatePackageResult Stage(UpdateInfo info, Action<int, string> progress, CancellationToken token)
+        {
+            var result = new UpdatePackageResult();
+            if (info == null)
+            {
+                result.Error = "没有可用的更新信息。";
+                return result;
+            }
+
+            UpdateDownloadResult download = Download(info, progress, token);
+            if (!download.Success)
+            {
+                result.Error = download.Error;
+                result.Canceled = download.Canceled;
+                return result;
+            }
+
+            if (progress != null) progress(100, "正在准备更新包…");
+            UpdatePackageResult extracted = Extract(download.ZipPath);
+            if (!extracted.Success)
+            {
+                result.Error = extracted.Error;
+                return result;
+            }
+
+            string ready = ReadyRoot(info.Version);
+            try
+            {
+                if (Directory.Exists(ready)) Directory.Delete(ready, true);
+                Directory.CreateDirectory(ready);
+                foreach (string source in Directory.GetFiles(extracted.Root, "*", SearchOption.AllDirectories))
+                {
+                    string relative = source.Substring(extracted.Root.Length).TrimStart(Path.DirectorySeparatorChar);
+                    string target = Path.Combine(ready, relative);
+                    string parent = Path.GetDirectoryName(target);
+                    if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                    File.Copy(source, target, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Error = "无法准备更新包：" + ex.Message;
+                return result;
+            }
+
+            // 临时解压目录与 zip 用完就清掉，只保留 ready 目录。
+            try { Directory.Delete(extracted.Root, true); } catch { }
+            try
+            {
+                SafeDelete(download.ZipPath);
+                string dir = Path.GetDirectoryName(download.ZipPath);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir) && Directory.GetFileSystemEntries(dir).Length == 0)
+                    Directory.Delete(dir, true);
+            }
+            catch { }
+
+            try { PruneStaged(info.Version); } catch { }
+            result.Root = ready;
+            return result;
+        }
+
+        /// <summary>清掉除 keepVersion 之外的预下载目录，避免旧版本越堆越多。</summary>
+        public static void PruneStaged(string keepVersion)
+        {
+            try
+            {
+                if (!Directory.Exists(StagingRoot)) return;
+                string keep = string.IsNullOrWhiteSpace(keepVersion)
+                    ? null
+                    : Path.GetFullPath(ReadyRoot(keepVersion)).TrimEnd(Path.DirectorySeparatorChar);
+                foreach (string dir in Directory.GetDirectories(StagingRoot, "ready-*"))
+                {
+                    if (keep != null &&
+                        string.Equals(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar), keep,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    try { Directory.Delete(dir, true); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static string SafeVersion(string version)
+        {
+            string text = (version ?? "").Trim();
+            if (text.Length == 0) text = "unknown";
+            foreach (char bad in Path.GetInvalidFileNameChars()) text = text.Replace(bad, '_');
+            return text;
+        }
+
         // ---------------------------------------------------------------- 应用更新
 
         /// <summary>
@@ -674,6 +788,8 @@ namespace EasyLabel.Core
                 if (!Directory.Exists(StagingRoot)) return;
                 foreach (string dir in Directory.GetDirectories(StagingRoot))
                 {
+                    // ready-* 是已经下载好、等下次启动安装的包，不能按时间清掉。
+                    if (Path.GetFileName(dir).StartsWith("ready-", StringComparison.OrdinalIgnoreCase)) continue;
                     try
                     {
                         if ((DateTime.Now - Directory.GetLastWriteTime(dir)).TotalDays < 1) continue;

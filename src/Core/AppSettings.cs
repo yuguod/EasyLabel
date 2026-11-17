@@ -38,9 +38,14 @@ namespace EasyLabel.Core
         public string LastFolder { get; set; }
         public string LastImportFolder { get; set; }
         public bool AutoCheckUpdate { get; set; }
+        public bool AutoDownloadUpdate { get; set; }
         public string UpdateFeedUrl { get; set; }
         public string LastUpdateCheck { get; set; }
         public string LastNotifiedVersion { get; set; }
+
+        /// <summary>后台已下载、等待安装的版本与解包目录；下次启动时可直接安装。</summary>
+        public string PendingUpdateVersion { get; set; }
+        public string PendingUpdateRoot { get; set; }
 
         public AppSettings()
         {
@@ -72,9 +77,12 @@ namespace EasyLabel.Core
             LastFolder = "";
             LastImportFolder = "";
             AutoCheckUpdate = true;
+            AutoDownloadUpdate = true;
             UpdateFeedUrl = "";
             LastUpdateCheck = "";
             LastNotifiedVersion = "";
+            PendingUpdateVersion = "";
+            PendingUpdateRoot = "";
         }
 
         public static bool Portable
@@ -181,9 +189,12 @@ namespace EasyLabel.Core
                 settings.LastFolder = Get(root, "LastFolder", settings.LastFolder);
                 settings.LastImportFolder = Get(root, "LastImportFolder", settings.LastImportFolder);
                 settings.AutoCheckUpdate = GetBool(root, "AutoCheckUpdate", settings.AutoCheckUpdate);
+                settings.AutoDownloadUpdate = GetBool(root, "AutoDownloadUpdate", settings.AutoDownloadUpdate);
                 settings.UpdateFeedUrl = Get(root, "UpdateFeedUrl", settings.UpdateFeedUrl);
                 settings.LastUpdateCheck = Get(root, "LastUpdateCheck", settings.LastUpdateCheck);
                 settings.LastNotifiedVersion = Get(root, "LastNotifiedVersion", settings.LastNotifiedVersion);
+                settings.PendingUpdateVersion = Get(root, "PendingUpdateVersion", settings.PendingUpdateVersion);
+                settings.PendingUpdateRoot = Get(root, "PendingUpdateRoot", settings.PendingUpdateRoot);
 
                 // v1.1 起默认 600 dpi 机型；旧设置文件只迁移一次，统一到 600。
                 if (settings.SettingsVersion < 2)
@@ -235,9 +246,12 @@ namespace EasyLabel.Core
                     new XElement("LastFolder", Safe(LastFolder)),
                     new XElement("LastImportFolder", Safe(LastImportFolder)),
                     new XElement("AutoCheckUpdate", AutoCheckUpdate),
+                    new XElement("AutoDownloadUpdate", AutoDownloadUpdate),
                     new XElement("UpdateFeedUrl", Safe(UpdateFeedUrl)),
                     new XElement("LastUpdateCheck", Safe(LastUpdateCheck)),
-                    new XElement("LastNotifiedVersion", Safe(LastNotifiedVersion))
+                    new XElement("LastNotifiedVersion", Safe(LastNotifiedVersion)),
+                    new XElement("PendingUpdateVersion", Safe(PendingUpdateVersion)),
+                    new XElement("PendingUpdateRoot", Safe(PendingUpdateRoot))
                 );
                 new XDocument(root).Save(SettingsPath);
             }
@@ -278,6 +292,8 @@ namespace EasyLabel.Core
             if (UpdateFeedUrl == null) UpdateFeedUrl = "";
             if (LastUpdateCheck == null) LastUpdateCheck = "";
             if (LastNotifiedVersion == null) LastNotifiedVersion = "";
+            if (PendingUpdateVersion == null) PendingUpdateVersion = "";
+            if (PendingUpdateRoot == null) PendingUpdateRoot = "";
         }
 
         public LabelSpec GetLabelSpec()

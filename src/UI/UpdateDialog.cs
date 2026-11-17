@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using EasyLabel.Core;
@@ -26,13 +27,17 @@ namespace EasyLabel.UI
         private UpdateInfo _info;
         private bool _busy;
 
+        /// <summary>后台已经下载好的解包目录（按版本区分）；为空表示需要现场下载。</summary>
+        private string _stagedRoot;
+
         /// <summary>true 表示已经启动更新程序，调用方应保存设置并退出主程序。</summary>
         public bool Applied { get; private set; }
 
-        public UpdateDialog(AppSettings settings, bool autoCheck)
+        public UpdateDialog(AppSettings settings, bool autoCheck, string stagedRoot = null)
         {
             _settings = settings ?? new AppSettings();
             _autoCheck = autoCheck;
+            _stagedRoot = stagedRoot;
 
             Text = "检查更新";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -114,7 +119,7 @@ namespace EasyLabel.UI
 
             var hint = Theme.Label(
                 "更新只替换程序文件，打印机设置、模版和历史日志都保留。\r\n" +
-                "程序会在替换完成后自动重启。",
+                "启动时会自动检查并下载新版本，下载好在左下角版本号处提示安装；程序会在替换完成后自动重启。",
                 8.4f, Theme.Muted);
             hint.AutoSize = false;
             hint.Location = new Point(26, 340);
@@ -212,16 +217,18 @@ namespace EasyLabel.UI
             }
             if (info.IsNewer())
             {
-                SetStatus("发现新版本 " + info.DisplayVersion(), Theme.Success);
+                bool staged = IsStagedFor(info.Version);
+                SetStatus("发现新版本 " + info.DisplayVersion() + (staged ? "（更新包已下载）" : ""), Theme.Success);
                 string detail = "当前版本 v" + AppInfo.Version + "　→　最新版本 " + info.DisplayVersion();
                 if (!string.IsNullOrEmpty(info.ReleaseDate))
                     detail += "　·　" + TrimDate(info.ReleaseDate);
                 if (info.Size > 0)
                     detail += "　·　" + (info.Size / 1024.0 / 1024.0).ToString("0.0") + " MB";
+                if (staged) detail += "　·　已下载，可直接安装";
                 SetDetail(detail);
                 _notes.Text = string.IsNullOrEmpty(info.Notes) ? "该版本未提供更新说明。" : Normalize(info.Notes);
                 _install.Enabled = true;
-                _install.Text = "更新到 " + info.DisplayVersion();
+                _install.Text = staged ? "安装并重启" : "更新到 " + info.DisplayVersion();
             }
             else
             {
@@ -248,15 +255,33 @@ namespace EasyLabel.UI
 
         // ---------------------------------------------------------------- 安装
 
+        /// <summary>这个版本的更新包是不是已经准备好了（后台下载过，或上次安装失败留下的）。</summary>
+        private bool IsStagedFor(string version)
+        {
+            if (string.IsNullOrEmpty(_stagedRoot) || string.IsNullOrEmpty(version)) return false;
+            try
+            {
+                if (!File.Exists(Path.Combine(_stagedRoot, "EasyLabel.exe"))) return false;
+                string name = Path.GetFileName(_stagedRoot.TrimEnd(Path.DirectorySeparatorChar));
+                return string.Equals(name, "ready-" + version, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
         private async Task InstallAsync()
         {
             if (_info == null || _busy) return;
             if (!_info.IsNewer()) return;
 
-            string message = "即将下载并安装 " + _info.DisplayVersion() + "。\r\n\r\n" +
-                             "· 下载完成后会校验文件完整性；\r\n" +
-                             "· 替换文件时程序会自动关闭，完成后重新启动；\r\n" +
-                             "· 打印机设置与模版不会受影响。\r\n\r\n是否继续？";
+            bool staged = IsStagedFor(_info.Version);
+            string message = staged
+                ? "更新包已下载：" + _info.DisplayVersion() + "。\r\n\r\n" +
+                  "· 安装时程序会自动关闭，完成后重新启动；\r\n" +
+                  "· 打印机设置与模版不会受影响。\r\n\r\n现在安装吗？"
+                : "即将下载并安装 " + _info.DisplayVersion() + "。\r\n\r\n" +
+                  "· 下载完成后会校验文件完整性；\r\n" +
+                  "· 替换文件时程序会自动关闭，完成后重新启动；\r\n" +
+                  "· 打印机设置与模版不会受影响。\r\n\r\n是否继续？";
             if (MessageBox.Show(this, message, "安装更新", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                     MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
 
@@ -264,87 +289,94 @@ namespace EasyLabel.UI
             _install.Enabled = false;
             _recheck.Enabled = false;
 
-            var progress = new ProgressForm("正在更新 EasyLabel", 100);
-            progress.Show(this);
-            try
+            string package = null;
+            string failure = null;
+            bool canceled = false;
+
+            if (staged)
             {
-                var token = progress.Token;
-                string failure = null;
-                bool canceled = false;
-                string package = await Task.Run(() =>
+                package = _stagedRoot;
+                SetStatus("正在安装 " + _info.DisplayVersion() + "…", Theme.Text);
+            }
+            else
+            {
+                var progress = new ProgressForm("正在更新 EasyLabel", 100);
+                progress.Show(this);
+                try
                 {
-                    UpdateDownloadResult download = UpdateService.Download(
-                        _info, (percent, text) => progress.Report(percent, text), token);
-                    if (!download.Success)
+                    var token = progress.Token;
+                    package = await Task.Run(() =>
                     {
-                        failure = download.Error;
-                        canceled = download.Canceled;
-                        return null;
-                    }
-                    progress.Report(100, "正在解压更新包…");
-                    UpdatePackageResult extracted = UpdateService.Extract(download.ZipPath);
-                    if (!extracted.Success) failure = extracted.Error;
-                    return extracted.Root;
-                });
-
-                try { progress.Finish(); } catch { }
-                _busy = false;
-                _recheck.Enabled = true;
-
-                if (package == null)
+                        UpdatePackageResult result = UpdateService.Stage(
+                            _info, (percent, text) => progress.Report(percent, text), token);
+                        if (!result.Success)
+                        {
+                            failure = result.Error;
+                            canceled = result.Canceled;
+                            return null;
+                        }
+                        return result.Root;
+                    });
+                }
+                catch (OperationCanceledException)
                 {
-                    if (canceled || token.IsCancellationRequested)
-                    {
-                        SetStatus("已取消更新", Theme.Warning);
-                        _install.Enabled = true;
-                        return;
-                    }
-                    SetStatus("更新失败", Theme.Error);
-                    SetDetail(failure ?? "未知错误。");
+                    canceled = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("在线更新失败", ex);
+                    failure = ex.Message;
+                }
+                finally
+                {
+                    try { progress.Finish(); } catch { }
+                }
+            }
+
+            _busy = false;
+            _recheck.Enabled = true;
+
+            if (package == null)
+            {
+                if (canceled)
+                {
+                    SetStatus("已取消更新", Theme.Warning);
                     _install.Enabled = true;
-                    MessageBox.Show(this, "更新失败：\r\n\r\n" + (failure ?? "未知错误"), "安装更新",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
-
-                string applyError;
-                if (UpdateService.ApplyAndRestart(package, out applyError))
-                {
-                    Applied = true;
-                    _settings.Save();
-                    SetStatus("更新已就绪，程序即将重启…", Theme.Success);
-                    DialogResult = DialogResult.OK;
-                    Close();
-                }
-                else
-                {
-                    SetStatus("更新失败", Theme.Error);
-                    SetDetail(applyError ?? "无法替换程序文件。");
-                    MessageBox.Show(this, "更新失败：\r\n\r\n" + (applyError ?? "无法替换程序文件。"),
-                        "安装更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    _install.Enabled = true;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                try { progress.Finish(); } catch { }
-                _busy = false;
-                _recheck.Enabled = true;
-                _install.Enabled = true;
-                SetStatus("已取消更新", Theme.Warning);
-            }
-            catch (Exception ex)
-            {
-                try { progress.Finish(); } catch { }
-                _busy = false;
-                _recheck.Enabled = true;
-                _install.Enabled = true;
-                Logger.Error("在线更新失败", ex);
                 SetStatus("更新失败", Theme.Error);
-                SetDetail(ex.Message);
-                MessageBox.Show(this, "更新失败：\r\n\r\n" + ex.Message, "安装更新",
+                SetDetail(failure ?? "未知错误。");
+                _install.Enabled = true;
+                MessageBox.Show(this, "更新失败：\r\n\r\n" + (failure ?? "未知错误"), "安装更新",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
+
+            string applyError;
+            if (UpdateService.ApplyAndRestart(package, out applyError))
+            {
+                _stagedRoot = null;
+                _settings.PendingUpdateVersion = "";
+                _settings.PendingUpdateRoot = "";
+                try { _settings.Save(); } catch { }
+                Applied = true;
+                SetStatus("更新已就绪，程序即将重启…", Theme.Success);
+                DialogResult = DialogResult.OK;
+                Close();
+                return;
+            }
+
+            // 替换失败：保留更新包，下次启动或点“重试安装”还能用。
+            _stagedRoot = package;
+            _settings.PendingUpdateVersion = _info.Version;
+            _settings.PendingUpdateRoot = package;
+            try { _settings.Save(); } catch { }
+            SetStatus("更新失败", Theme.Error);
+            SetDetail(applyError ?? "无法替换程序文件。");
+            _install.Text = "重试安装";
+            _install.Enabled = true;
+            MessageBox.Show(this, "更新失败：\r\n\r\n" + (applyError ?? "无法替换程序文件。"),
+                "安装更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         private void OpenUrl(string url)
