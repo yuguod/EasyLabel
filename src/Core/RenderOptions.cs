@@ -27,6 +27,12 @@ namespace EasyLabel.Core
         public string FontFamily { get; set; }
         public bool Bold { get; set; }
         public LayoutPlan LayoutPlan { get; set; }
+
+        /// <summary>
+        /// 自由排版（多元素）。一旦存在，就不再使用 <see cref="LayoutPlan"/> 与版式分区，
+        /// 元素按自己的毫米坐标绘制。
+        /// </summary>
+        public FreeLayout FreeLayout { get; set; }
         public int BarcodeHeightPercent { get; set; }
         public int QrSizePercent { get; set; }
 
@@ -46,6 +52,7 @@ namespace EasyLabel.Core
             FontFamily = "Microsoft YaHei UI";
             Bold = false;
             LayoutPlan = null;
+            FreeLayout = null;
             BarcodeHeightPercent = 100;
             QrSizePercent = 100;
         }

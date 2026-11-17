@@ -340,7 +340,9 @@ namespace EasyLabel.UI
                          "一维码 " + template.BarcodeTypeName + " · QR " + template.QrEcc +
                          " · 边距 " + template.MarginTopMm.ToString("0.#") + "/" + template.MarginBottomMm.ToString("0.#") +
                          "/" + template.MarginLeftMm.ToString("0.#") + "/" + template.MarginRightMm.ToString("0.#") + " mm" +
-                         (template.LayoutPlan != null ? " · 自定义布局" : " · 自动布局");
+                         (template.LayoutPlan != null ? " · 自定义布局" : " · 自动布局") +
+                         (template.FreeLayout != null && template.FreeLayout.HasElements
+                             ? " · 自由排版（" + template.FreeLayout.Summary + "）" : "");
 
             try
             {

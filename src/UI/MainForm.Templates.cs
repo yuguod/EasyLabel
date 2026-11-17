@@ -317,6 +317,10 @@ namespace EasyLabel.UI
                 _singleLayoutPlan.Normalize(spec, LayoutPlan.AllowBox(spec,
                     template.MarginLeftMm, template.MarginTopMm));
             }
+            _singleFreeLayout = template.FreeLayout == null ? null : template.FreeLayout.Clone();
+            if (_singleFreeLayout != null)
+                _singleFreeLayout.Normalize(spec, template.CreateRenderOptions(_settings.Dpi));
+            UpdateSingleFreeSummary();
 
             UpdateSingleControlStates();
             UpdateSinglePreview();
@@ -352,6 +356,10 @@ namespace EasyLabel.UI
                 _batchLayoutPlan = template.LayoutPlan == null ? null : template.LayoutPlan.Clone();
                 if (_batchLayoutPlan != null)
                     _batchLayoutPlan.Normalize(spec, LayoutPlan.AllowBox(spec, template.MarginLeftMm, template.MarginTopMm));
+                _batchFreeLayout = template.FreeLayout == null ? null : template.FreeLayout.Clone();
+                if (_batchFreeLayout != null)
+                    _batchFreeLayout.Normalize(spec, template.CreateRenderOptions(_settings.Dpi));
+                UpdateBatchFreeSummary();
             }
             finally
             {

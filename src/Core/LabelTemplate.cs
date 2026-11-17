@@ -64,6 +64,9 @@ namespace EasyLabel.Core
         /// <summary>布局编辑得到的位置/尺寸；null 表示使用自动布局。</summary>
         public LayoutPlan LayoutPlan { get; set; }
 
+        /// <summary>自由排版（多文字块 + 一维码 + 二维码）；null 表示不用自由排版。</summary>
+        public FreeLayout FreeLayout { get; set; }
+
         // ---- 示例内容 ----
         public string Text { get; set; }
         public bool ShowBarcode { get; set; }
@@ -138,6 +141,7 @@ namespace EasyLabel.Core
                 template.BarcodeHeightPercent = options.BarcodeHeightPercent;
                 template.QrSizePercent = options.QrSizePercent;
                 template.LayoutPlan = options.LayoutPlan == null ? null : options.LayoutPlan.Clone();
+                template.FreeLayout = options.FreeLayout == null ? null : options.FreeLayout.Clone();
             }
 
             if (content != null)
@@ -193,6 +197,7 @@ namespace EasyLabel.Core
                 FontFamily = string.IsNullOrWhiteSpace(FontFamily) ? "Microsoft YaHei UI" : FontFamily,
                 Bold = Bold,
                 LayoutPlan = LayoutPlan == null ? null : LayoutPlan.Clone(),
+                FreeLayout = FreeLayout == null ? null : FreeLayout.Clone(),
                 BarcodeHeightPercent = BarcodeHeightPercent,
                 QrSizePercent = QrSizePercent
             };
@@ -219,6 +224,7 @@ namespace EasyLabel.Core
         {
             var copy = (LabelTemplate)MemberwiseClone();
             copy.LayoutPlan = LayoutPlan == null ? null : LayoutPlan.Clone();
+            copy.FreeLayout = FreeLayout == null ? null : FreeLayout.Clone();
             return copy;
         }
 
@@ -264,6 +270,12 @@ namespace EasyLabel.Core
             if (LayoutPlan != null)
             {
                 LayoutPlan.Normalize(GetSpec(), LayoutPlan.AllowBox(GetSpec(), MarginLeftMm, MarginTopMm));
+            }
+
+            if (FreeLayout != null)
+            {
+                FreeLayout.Normalize(GetSpec(), CreateRenderOptions(600));
+                if (!FreeLayout.HasElements) FreeLayout = null;
             }
         }
 

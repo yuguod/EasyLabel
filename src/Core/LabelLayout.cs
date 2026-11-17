@@ -44,6 +44,14 @@ namespace EasyLabel.Core
         public List<string> Errors { get; private set; }
         public List<string> Warnings { get; private set; }
 
+        /// <summary>自由排版（多元素）渲染项；为 null 表示走三区块自动/自定义布局。</summary>
+        private List<FreeItem> _free;
+
+        public bool IsFreeLayout { get { return _free != null; } }
+
+        /// <summary>自由排版里实际画出的元素数（内容为空被跳过的元素不算）。</summary>
+        public int FreeItemCount { get { return _free == null ? 0 : _free.Count; } }
+
         private LabelLayout()
         {
             Errors = new List<string>();
@@ -60,17 +68,42 @@ namespace EasyLabel.Core
             get
             {
                 var parts = new List<string>();
-                parts.Add("版式 " + ModeDisplayName(Mode));
-                if (Options.LayoutPlan != null) parts.Add("自定义布局");
-                if (ShowText) parts.Add("文字 " + Math.Round(TextFontPx / Options.Dpi * 25.4, 1).ToString("0.0") + " mm");
-                if (ShowBarcode && Barcode != null)
-                    parts.Add("一维码 " + BarcodeScale + " 点/模块");
-                if (ShowQr && Qr != null)
-                    parts.Add("QR v" + Qr.Version + " / " + QrScale + " 点/模块");
+                if (IsFreeLayout)
+                {
+                    parts.Add("自由排版");
+                    parts.Add(FreeSummary());
+                }
+                else
+                {
+                    parts.Add("版式 " + ModeDisplayName(Mode));
+                    if (Options.LayoutPlan != null) parts.Add("自定义布局");
+                    if (ShowText) parts.Add("文字 " + Math.Round(TextFontPx / Options.Dpi * 25.4, 1).ToString("0.0") + " mm");
+                    if (ShowBarcode && Barcode != null)
+                        parts.Add("一维码 " + BarcodeScale + " 点/模块");
+                    if (ShowQr && Qr != null)
+                        parts.Add("QR v" + Qr.Version + " / " + QrScale + " 点/模块");
+                }
                 if (Options.HasOffset)
                     parts.Add("偏移 X " + Options.OffsetXMm.ToString("0.0") + " / Y " + Options.OffsetYMm.ToString("0.0") + " mm");
                 return string.Join(" · ", parts.ToArray());
             }
+        }
+
+        private string FreeSummary()
+        {
+            if (_free == null || _free.Count == 0) return "无元素";
+            int text = 0, barcode = 0, qr = 0;
+            foreach (FreeItem item in _free)
+            {
+                if (item.Kind == FreeElementKind.Text) text++;
+                else if (item.Kind == FreeElementKind.Barcode) barcode++;
+                else qr++;
+            }
+            var parts = new List<string>();
+            if (text > 0) parts.Add(text + " 个文字块");
+            if (barcode > 0) parts.Add(barcode + " 个一维码");
+            if (qr > 0) parts.Add(qr + " 个二维码");
+            return string.Join(" · ", parts.ToArray());
         }
 
         public static string ModeDisplayName(LayoutMode mode)
@@ -101,6 +134,14 @@ namespace EasyLabel.Core
             layout.Options = options;
             layout.LabelRect = new RectangleF(0, 0, spec.WidthDots(options.Dpi), spec.HeightDots(options.Dpi));
             layout.Text = content.EffectiveText;
+
+            // 自由排版：元素自带坐标，不再走版式分区，也不必要求“有文字/条码/二维码”都填了。
+            if (options.FreeLayout != null && options.FreeLayout.HasElements)
+            {
+                layout.Mode = LayoutMode.Auto;
+                layout.BuildFree(measureGraphics);
+                return layout;
+            }
 
             layout.ResolveMode();
             if (layout.Errors.Count > 0) return layout;
@@ -465,6 +506,203 @@ namespace EasyLabel.Core
                 Errors.Add("二维码区域太小，请调整边距或版式");
         }
 
+        /// <summary>
+        /// 自由排版：逐个元素算出实际矩形、字号、模块宽度。元素之间互不影响，
+        /// 只有“放不下”的属性会被记成错误/警告，不会互相挤压。
+        /// </summary>
+        private void BuildFree(Graphics g)
+        {
+            _free = new List<FreeItem>();
+            FreeLayout plan = Options.FreeLayout.Clone();
+            plan.Normalize(Spec, Options);
+
+            float mL = (float)Options.MarginLeftMm;
+            float mT = (float)Options.MarginTopMm;
+            DateTime now = DateTime.Now;
+            var skipped = new List<string>();
+
+            foreach (FreeElement element in plan.Elements)
+            {
+                string name = string.IsNullOrWhiteSpace(element.Name)
+                    ? FreeLayout.KindName(element.Kind)
+                    : element.Name.Trim();
+                string value = LabelTokens.Expand(element.Content, Content, now);
+                if (value.Trim().Length == 0)
+                {
+                    skipped.Add(name);
+                    continue;
+                }
+
+                RectangleF rect = MRect(mL + element.Box.X, mT + element.Box.Y, element.Box.Width, element.Box.Height);
+                if (rect.Width < 2 || rect.Height < 2)
+                {
+                    Warnings.Add("「" + name + "」尺寸太小，已跳过");
+                    continue;
+                }
+
+                // 越出标签的部分打印时会被裁掉，这里先说一声，免得“预览有、打出来没有”。
+                if (rect.Left < -0.5f || rect.Top < -0.5f ||
+                    rect.Right > LabelRect.Width + 0.5f || rect.Bottom > LabelRect.Height + 0.5f)
+                {
+                    Warnings.Add("「" + name + "」超出标签范围，超出部分打印时会被裁掉");
+                }
+
+                var item = new FreeItem
+                {
+                    Kind = element.Kind,
+                    Name = name,
+                    Value = value,
+                    Rect = rect,
+                    Family = string.IsNullOrWhiteSpace(element.FontFamily) ? Options.FontFamily : element.FontFamily,
+                    Bold = element.Bold,
+                    Align = element.Align
+                };
+
+                if (element.Kind == FreeElementKind.Text)
+                {
+                    if (!PrepareFreeText(g, item, element)) continue;
+                }
+                else if (element.Kind == FreeElementKind.Barcode)
+                {
+                    if (!PrepareFreeBarcode(item)) continue;
+                }
+                else
+                {
+                    if (!PrepareFreeQr(item)) continue;
+                }
+
+                _free.Add(item);
+            }
+
+            if (_free.Count == 0)
+            {
+                Errors.Add(skipped.Count > 0
+                    ? "自由排版里没有可打印内容：" + string.Join("、", skipped.ToArray()) + " 的内容为空"
+                    : "自由排版里还没有放置元素");
+            }
+            else if (skipped.Count > 0)
+            {
+                Warnings.Add("内容为空已跳过：" + string.Join("、", skipped.ToArray()));
+            }
+        }
+
+        private bool PrepareFreeText(Graphics g, FreeItem item, FreeElement element)
+        {
+            if (g == null) return false;
+            RectangleF inner = Deflate(item.Rect, Options.MmToPx(0.2));
+            if (inner.Width < 3 || inner.Height < 3)
+            {
+                Warnings.Add("「" + item.Name + "」区域太小，文字已跳过");
+                return false;
+            }
+
+            float minPx = Options.MmToPx(1.0);
+            float maxPx = element.FontSizeMm > 0
+                ? Options.MmToPx(element.FontSizeMm)
+                : inner.Height * 0.95f;
+            if (maxPx < minPx) maxPx = minPx;
+
+            float fitted;
+            if (!TryFitText(g, item.Value, inner, maxPx, minPx, item.Family, item.Bold, item.Align, out fitted))
+            {
+                Warnings.Add("「" + item.Name + "」文字放不下，已按最小字号显示，可能不完整");
+                fitted = minPx;
+            }
+            else if (element.FontSizeMm > 0 && fitted < Options.MmToPx(element.FontSizeMm) * 0.9f)
+            {
+                Warnings.Add("「" + item.Name + "」已自动缩小到 " +
+                             (fitted / Options.Dpi * 25.4).ToString("0.0") + " mm 才放下");
+            }
+            item.FontPx = fitted;
+            return true;
+        }
+
+        private bool PrepareFreeBarcode(FreeItem item)
+        {
+            try
+            {
+                item.Barcode = BarcodeFactory.EncodeBarcode(item.Value, Options.BarcodeType);
+            }
+            catch (Exception ex)
+            {
+                Errors.Add("「" + item.Name + "」" + ex.Message);
+                return false;
+            }
+
+            int natural = item.Barcode.Matrix.Width;
+            int scale = natural > 0 ? (int)Math.Floor(item.Rect.Width) / natural : 0;
+            if (scale < 1)
+            {
+                Errors.Add("「" + item.Name + "」一维码内容过长：需要 " + natural +
+                           " 点宽，当前元素只有 " + (int)Math.Floor(item.Rect.Width) +
+                           " 点。请缩短内容或把元素拉宽");
+                return false;
+            }
+            item.BarcodeScale = scale;
+
+            float gap = Options.MmToPx(0.25);
+            RectangleF bar = item.Rect;
+            if (Options.ShowBarcodeText)
+            {
+                float hriH = Math.Min(Options.MmToPx(2.6f), item.Rect.Height * 0.26f);
+                if (hriH < Options.MmToPx(1.1f)) hriH = Math.Min(Options.MmToPx(1.1f), item.Rect.Height * 0.32f);
+                float barH = Math.Max(1f, item.Rect.Height - hriH - gap);
+                bar = new RectangleF(item.Rect.X, item.Rect.Y, item.Rect.Width, barH);
+                item.HriRect = new RectangleF(item.Rect.X, bar.Bottom + gap, item.Rect.Width,
+                    Math.Max(0f, item.Rect.Bottom - bar.Bottom - gap));
+            }
+            item.BarRect = bar;
+            return true;
+        }
+
+        private bool PrepareFreeQr(FreeItem item)
+        {
+            try
+            {
+                item.Qr = BarcodeFactory.EncodeQr(item.Value, Options.QrEcc);
+            }
+            catch (Exception ex)
+            {
+                Errors.Add("「" + item.Name + "」二维码生成失败：" + ex.Message);
+                return false;
+            }
+
+            int modules = item.Qr.Matrix.Width;
+            int total = modules + 8;
+            int available = (int)Math.Floor(Math.Min(item.Rect.Width, item.Rect.Height));
+            int scale = total > 0 ? available / total : 0;
+            if (scale < 1)
+            {
+                Errors.Add("「" + item.Name + "」二维码内容过长：v" + item.Qr.Version + " 需要 " +
+                           total + "×" + total + " 点，元素只有 " + available +
+                           " 点。请缩短内容、降低纠错等级，或把元素拉大");
+                return false;
+            }
+            item.QrScale = scale;
+            if (scale == 1)
+                Warnings.Add("「" + item.Name + "」二维码模块只有 1 点，扫描成功率可能偏低");
+            return true;
+        }
+
+        /// <summary>自由排版的一个渲染项（已算好尺寸与字体）。</summary>
+        private sealed class FreeItem
+        {
+            public FreeElementKind Kind;
+            public string Name;
+            public string Value;
+            public RectangleF Rect;
+            public string Family;
+            public bool Bold;
+            public TextAlign Align;
+            public float FontPx;
+            public EncodedBarcode Barcode;
+            public int BarcodeScale;
+            public RectangleF BarRect;
+            public RectangleF HriRect;
+            public EncodedQr Qr;
+            public int QrScale;
+        }
+
         private void PrepareBarcode()
         {
             if (!ShowBarcode) return;
@@ -575,31 +813,37 @@ namespace EasyLabel.Core
             }
         }
 
+        private bool TryFitText(Graphics g, string text, RectangleF rect, float maxPx, float minPx, out float fitted)
+        {
+            return TryFitText(g, text, rect, maxPx, minPx, Options.FontFamily, Options.Bold, Options.TextAlign, out fitted);
+        }
+
         /// <summary>
         /// 在 [minPx, maxPx] 内二分查找可放下的最大字号。
         /// 旧实现从 maxPx 起每次 -1px 线性扫描，600 dpi 下每行要测上百个 Font，
         /// 批量校验 1000 行就是约 5 万次字体创建与测量，这就是“点打印先卡两秒”的来源。
         /// </summary>
-        private bool TryFitText(Graphics g, string text, RectangleF rect, float maxPx, float minPx, out float fitted)
+        private bool TryFitText(Graphics g, string text, RectangleF rect, float maxPx, float minPx,
+            string family, bool bold, TextAlign align, out float fitted)
         {
             fitted = minPx;
             if (string.IsNullOrEmpty(text)) return true;
 
-            using (var measureFormat = CreateStringFormat(false))
+            using (var measureFormat = CreateStringFormat(false, align))
             {
-                if (Fits(g, text, rect, maxPx, measureFormat))
+                if (Fits(g, text, rect, maxPx, measureFormat, family, bold))
                 {
                     fitted = maxPx;
                     return true;
                 }
-                if (!Fits(g, text, rect, minPx, measureFormat)) return false;
+                if (!Fits(g, text, rect, minPx, measureFormat, family, bold)) return false;
 
                 double lo = minPx;
                 double hi = maxPx;
                 for (int i = 0; i < 24 && hi - lo > 0.02; i++)
                 {
                     double mid = (lo + hi) / 2.0;
-                    if (Fits(g, text, rect, (float)mid, measureFormat)) lo = mid;
+                    if (Fits(g, text, rect, (float)mid, measureFormat, family, bold)) lo = mid;
                     else hi = mid;
                 }
                 fitted = (float)lo;
@@ -607,9 +851,10 @@ namespace EasyLabel.Core
             }
         }
 
-        private bool Fits(Graphics g, string text, RectangleF rect, float px, StringFormat format)
+        private bool Fits(Graphics g, string text, RectangleF rect, float px, StringFormat format,
+            string family, bool bold)
         {
-            using (var font = CreateFont(px, Options.Bold))
+            using (var font = CreateFont(px, bold, family))
             {
                 SizeF size = g.MeasureString(text, font, new SizeF(rect.Width, 100000f), format);
                 return size.Width <= rect.Width + 1.0f && size.Height <= rect.Height + 1.0f;
@@ -626,6 +871,12 @@ namespace EasyLabel.Core
 
             using (var brush = new SolidBrush(Color.Black))
             {
+                if (IsFreeLayout)
+                {
+                    DrawFree(g, brush);
+                    return;
+                }
+
                 if (ShowBarcode && Barcode != null)
                 {
                     DrawBarcode(g, brush);
@@ -644,6 +895,99 @@ namespace EasyLabel.Core
                 if (ShowBarcode && ShowHri && Barcode != null)
                 {
                     DrawHri(g, brush);
+                }
+            }
+        }
+
+        /// <summary>自由排版：先二维码（带白底），再一维码与明文，最后文字块压在最上层。</summary>
+        private void DrawFree(Graphics g, Brush brush)
+        {
+            if (_free == null) return;
+
+            foreach (FreeItem item in _free)
+            {
+                if (item.Kind != FreeElementKind.Qr) continue;
+                DrawFreeQr(g, brush, item);
+            }
+
+            foreach (FreeItem item in _free)
+            {
+                if (item.Kind != FreeElementKind.Barcode) continue;
+                DrawFreeBarcode(g, brush, item);
+                DrawFreeHri(g, brush, item);
+            }
+
+            foreach (FreeItem item in _free)
+            {
+                if (item.Kind != FreeElementKind.Text) continue;
+                RectangleF inner = Deflate(item.Rect, Options.MmToPx(0.2));
+                using (var font = CreateFont(item.FontPx, item.Bold, item.Family))
+                using (var format = CreateStringFormat(false, item.Align))
+                {
+                    g.DrawString(item.Value, font, brush, inner, format);
+                }
+            }
+        }
+
+        private void DrawFreeBarcode(Graphics g, Brush brush, FreeItem item)
+        {
+            int natural = item.Barcode.Matrix.Width;
+            float width = natural * item.BarcodeScale;
+            float left = item.BarRect.Left + (item.BarRect.Width - width) / 2f;
+            float top = item.BarRect.Top;
+            float height = item.BarRect.Height;
+            for (int x = 0; x < natural; x++)
+            {
+                if (item.Barcode.Matrix[x, 0])
+                    g.FillRectangle(brush, left + x * item.BarcodeScale, top, item.BarcodeScale, height);
+            }
+        }
+
+        private void DrawFreeHri(Graphics g, Brush brush, FreeItem item)
+        {
+            if (!Options.ShowBarcodeText || item.HriRect.Height < 2) return;
+
+            float minPx = Options.MmToPx(1.0);
+            float maxPx = Math.Min(item.HriRect.Height * 0.92f, Options.MmToPx(2.6f));
+            if (maxPx < minPx) maxPx = minPx;
+            float fitted;
+            if (!TryFitText(g, item.Barcode.DisplayValue, item.HriRect, maxPx, minPx,
+                    item.Family, false, TextAlign.Center, out fitted))
+            {
+                fitted = minPx;
+            }
+            using (var font = CreateFont(fitted, false, item.Family))
+            using (var format = CreateStringFormat(true, TextAlign.Center))
+            {
+                g.DrawString(item.Barcode.DisplayValue, font, brush, item.HriRect, format);
+            }
+        }
+
+        private void DrawFreeQr(Graphics g, Brush brush, FreeItem item)
+        {
+            int modules = item.Qr.Matrix.Width;
+            int total = modules + 8;
+            float size = total * item.QrScale;
+            float left = item.Rect.Left + (item.Rect.Width - size) / 2f;
+            float top = item.Rect.Top + (item.Rect.Height - size) / 2f;
+
+            // 只清二维码方块本身，元素框比二维码大时不要把旁边的文字/条码擦掉。
+            using (var white = new SolidBrush(Color.White))
+            {
+                g.FillRectangle(white, left, top, size, size);
+            }
+
+            for (int y = 0; y < modules; y++)
+            {
+                for (int x = 0; x < modules; x++)
+                {
+                    if (item.Qr.Matrix[x, y] == 1)
+                    {
+                        g.FillRectangle(brush,
+                            left + (x + 4) * item.QrScale,
+                            top + (y + 4) * item.QrScale,
+                            item.QrScale, item.QrScale);
+                    }
                 }
             }
         }
@@ -714,15 +1058,25 @@ namespace EasyLabel.Core
 
         private Font CreateFont(float px, bool bold)
         {
-            string family = string.IsNullOrWhiteSpace(Options.FontFamily) ? UiFontName : Options.FontFamily;
+            return CreateFont(px, bold, Options.FontFamily);
+        }
+
+        private Font CreateFont(float px, bool bold, string family)
+        {
+            string name = string.IsNullOrWhiteSpace(family) ? UiFontName : family;
             // 用户导入的 ttf 走私有字体集合，系统字体走普通构造；两者都在 FontLibrary 里处理。
-            return FontLibrary.CreateFont(family, px, bold);
+            return FontLibrary.CreateFont(name, px, bold);
         }
 
         private StringFormat CreateStringFormat(bool hri)
         {
+            return CreateStringFormat(hri, Options.TextAlign);
+        }
+
+        private StringFormat CreateStringFormat(bool hri, TextAlign align)
+        {
             var format = new StringFormat();
-            switch (Options.TextAlign)
+            switch (align)
             {
                 case TextAlign.Left:
                     format.Alignment = StringAlignment.Near; break;

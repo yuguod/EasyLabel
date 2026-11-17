@@ -41,6 +41,7 @@ internal static class TestRunner
         TestPrintOffsetAndNegativeMargins();
         TestLegacyLayoutMigration();
         TestLayoutHelpers();
+        TestFreeLayout();
         TestZplCopies();
         TestSequence();
         TestXlsxExport();
@@ -781,6 +782,202 @@ internal static class TestRunner
     }
 
     /// <summary>对齐 / 吸附 / 安全区计算。</summary>
+    private static void TestFreeLayout()
+    {
+        var now = new DateTime(2026, 11, 17, 9, 5, 0);
+        var content = new LabelContent
+        {
+            Text = "产品A\n第二行",
+            ShowBarcode = true,
+            BarcodeType = BarcodeType.Code128,
+            BarcodeValue = "A-2026-001",
+            ShowQr = true,
+            QrValue = "https://example.com/A",
+            Tokens = new Dictionary<string, string> { { "row", "12" } }
+        };
+
+        // ---- 占位符 ----
+        Check(LabelTokens.Expand("{text}|{barcode}|{qr}", content, now) ==
+              "产品A\n第二行|A-2026-001|https://example.com/A",
+            "free tokens basic", LabelTokens.Expand("{text}|{barcode}|{qr}", content, now).Replace("\n", "\\n"));
+        Check(LabelTokens.Expand("{date} {time} {datetime}", content, now) ==
+              "2026-11-17 09:05 2026-11-17 09:05", "free tokens date",
+            LabelTokens.Expand("{date} {time} {datetime}", content, now));
+        Check(LabelTokens.Expand("{row} 行 / {内容}", content, now) == "12 行 / 产品A\n第二行",
+            "free tokens extra and chinese", LabelTokens.Expand("{row} 行 / {内容}", content, now));
+        Check(LabelTokens.Expand("{unknown}", content, now) == "{unknown}", "free tokens unknown kept", "");
+        Check(LabelTokens.Expand("没有占位符", content, now) == "没有占位符", "free tokens plain text", "");
+        Check(LabelTokens.UnknownTokens("{text} {nope}", content).Count == 1, "free tokens unknown list",
+            string.Join(",", LabelTokens.UnknownTokens("{text} {nope}", content).ToArray()));
+        Check(LabelTokens.Expand("{qr}", new LabelContent(), now) == "", "free tokens empty qr", "");
+
+        // ---- 从自动布局生成 ----
+        var spec = LabelSpec.CreateCustom(50, 30);
+        var options = new RenderOptions { Dpi = 203, LayoutMode = LayoutMode.All };
+        LabelLayout auto;
+        using (var bmp = new Bitmap(1, 1))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            auto = LabelLayout.Build(spec, content, options, g);
+        }
+        Check(auto.IsValid, "free auto layout valid", auto.InfoText);
+        FreeLayout fromAuto = FreeLayout.FromAuto(auto);
+        Check(fromAuto.CountOf(FreeElementKind.Text) == 1 &&
+              fromAuto.CountOf(FreeElementKind.Barcode) == 1 &&
+              fromAuto.CountOf(FreeElementKind.Qr) == 1, "free from auto element count", fromAuto.Summary);
+        Check(fromAuto.Elements[0].Content == "{text}", "free from auto uses token", fromAuto.Elements[0].Content);
+        Check(fromAuto.Elements[0].Box.Width > 0 && fromAuto.Elements[0].Box.Height > 0,
+            "free from auto has box", fromAuto.Elements[0].Box.ToString());
+
+        // ---- 多文字块 + 一维码 + 二维码 ----
+        var layout = new FreeLayout();
+        layout.Elements.Add(FreeText("品名", 1, 1, 40, 8, "精品红茶 · 特级", 4.2, TextAlign.Left));
+        layout.Elements.Add(FreeText("价格", 41, 1, 8, 8, "38.00", 3.0, TextAlign.Right));
+        layout.Elements.Add(FreeText("日期", 1, 24, 30, 4, "日期 {date}", 2.4, TextAlign.Left));
+        layout.Elements.Add(new FreeElement
+        {
+            Kind = FreeElementKind.Barcode,
+            Name = "条码",
+            Content = "{barcode}",
+            Box = new RectangleF(1, 12, 34, 10)
+        });
+        layout.Elements.Add(new FreeElement
+        {
+            Kind = FreeElementKind.Qr,
+            Name = "二维码",
+            Content = "{qr}",
+            Box = new RectangleF(36, 11, 13, 13)
+        });
+
+        // 这套断言只关心元素自身的位置，所以边距清零，让安全区等于整张标签。
+        var freeOptions = new RenderOptions
+        {
+            Dpi = 203,
+            LayoutMode = LayoutMode.Auto,
+            FreeLayout = layout,
+            MarginTopMm = 0,
+            MarginBottomMm = 0,
+            MarginLeftMm = 0,
+            MarginRightMm = 0
+        };
+        using (RenderedLabel rendered = LabelRenderer.Render(spec, content, freeOptions))
+        {
+            Check(rendered.Info.Contains("自由排版") && rendered.Info.Contains("3 个文字块"),
+                "free render info", rendered.Info);
+            Check(rendered.Warnings.Count == 0, "free render no warnings",
+                string.Join(" / ", rendered.Warnings.ToArray()));
+
+            Rectangle ink = InkRect(rendered.Bitmap);
+            Check(ink.Width > rendered.WidthDots * 0.6 && ink.Height > rendered.HeightDots * 0.6,
+                "free render covers most of label", ink.ToString());
+        }
+
+        // 二维码元素框比二维码大时，不该把旁边的一维码擦掉
+        var overlap = new FreeLayout();
+        overlap.Elements.Add(new FreeElement
+        {
+            Kind = FreeElementKind.Qr, Name = "二维码", Content = "{qr}",
+            Box = new RectangleF(1, 1, 20, 12)
+        });
+        using (RenderedLabel rendered = LabelRenderer.Render(spec, content,
+                   new RenderOptions { Dpi = 203, FreeLayout = overlap }))
+        {
+            Check(rendered.Warnings.Count == 0, "free qr non-square box ok",
+                string.Join(" / ", rendered.Warnings.ToArray()));
+        }
+
+        // ---- 空内容：跳过并提示；全空则报错 ----
+        var withEmpty = new FreeLayout();
+        withEmpty.Elements.Add(FreeText("品名", 1, 1, 40, 8, "A", 3.0, TextAlign.Left));
+        withEmpty.Elements.Add(FreeText("空块", 1, 12, 20, 6, "", 3.0, TextAlign.Left));
+        using (RenderedLabel rendered = LabelRenderer.Render(spec, content,
+                   new RenderOptions { Dpi = 203, FreeLayout = withEmpty }))
+        {
+            Check(rendered.Warnings.Count == 1 && rendered.Warnings[0].Contains("空块"),
+                "free empty block skipped", string.Join(" / ", rendered.Warnings.ToArray()));
+        }
+
+        var allEmpty = new FreeLayout();
+        allEmpty.Elements.Add(FreeText("空块", 1, 1, 20, 6, "", 3.0, TextAlign.Left));
+        bool threw = false;
+        try
+        {
+            using (RenderedLabel rendered = LabelRenderer.Render(spec, content,
+                       new RenderOptions { Dpi = 203, FreeLayout = allEmpty }))
+            {
+            }
+        }
+        catch (LabelRenderException)
+        {
+            threw = true;
+        }
+        Check(threw, "free all empty throws", "");
+
+        // ---- 一维码放不下：报错而不是画出残码 ----
+        var tooSmall = new FreeLayout();
+        tooSmall.Elements.Add(new FreeElement
+        {
+            Kind = FreeElementKind.Barcode, Name = "过窄条码", Content = "A-2026-001-TOO-LONG",
+            Box = new RectangleF(1, 1, 6, 8)
+        });
+        string error = null;
+        try
+        {
+            using (RenderedLabel rendered = LabelRenderer.Render(spec, content,
+                       new RenderOptions { Dpi = 203, FreeLayout = tooSmall }))
+            {
+            }
+        }
+        catch (LabelRenderException ex)
+        {
+            error = ex.Message;
+        }
+        Check(error != null && error.Contains("过窄条码"), "free barcode too narrow", error ?? "");
+
+        // ---- 归整：越界坐标与过小尺寸 ----
+        var wild = new FreeLayout();
+        wild.Elements.Add(FreeText("越界", -999, -999, 999, 999, "x", 3.0, TextAlign.Left));
+        wild.Normalize(spec, freeOptions);
+        RectangleF box = wild.Elements[0].Box;
+        Check(box.Left >= -8.01f && box.Top >= -8.01f, "free normalize clamps origin", box.ToString());
+        Check(box.Width <= spec.WidthMm + 16.1 && box.Height <= spec.HeightMm + 16.1,
+            "free normalize clamps size", box.ToString());
+
+        // ---- 模版往返 ----
+        var template = LabelTemplate.Capture("自由排版", spec, freeOptions, content, 2);
+        Check(template.FreeLayout != null && template.FreeLayout.Elements.Count == 5,
+            "free template capture", template.FreeLayout == null ? "null" : template.FreeLayout.Summary);
+        string xml = TemplateStore.Serialize(template);
+        LabelTemplate restored = TemplateStore.Deserialize(xml, "free.elbl");
+        Check(restored.FreeLayout != null && restored.FreeLayout.Elements.Count == 5,
+            "free template round trip count",
+            restored.FreeLayout == null ? "null" : restored.FreeLayout.Elements.Count.ToString());
+        Check(restored.FreeLayout != null &&
+              restored.FreeLayout.Elements[0].Content == "精品红茶 · 特级" &&
+              Math.Abs(restored.FreeLayout.Elements[0].FontSizeMm - 4.2) < 0.05,
+            "free template round trip content", restored.FreeLayout == null ? "null" :
+                restored.FreeLayout.Elements[0].Content);
+
+        // 旧的模版没有 FreeLayout，读出来应该是 null，不能凭空造一个
+        var plain = LabelTemplate.Capture("普通", spec, options, content, 1);
+        Check(TemplateStore.Deserialize(TemplateStore.Serialize(plain), "plain.elbl").FreeLayout == null,
+            "free template absent stays null", "");
+    }
+
+    private static FreeElement FreeText(string name, float x, float y, float w, float h,
+        string text, double fontMm, TextAlign align)
+    {
+        return new FreeElement
+        {
+            Kind = FreeElementKind.Text,
+            Name = name,
+            Box = new RectangleF(x, y, w, h),
+            Content = text,
+            FontSizeMm = fontMm,
+            Align = align
+        };
+    }
+
     private static void TestLayoutHelpers()
     {
         var area = new RectangleF(0, 0, 30, 12);

@@ -14,6 +14,12 @@ namespace EasyLabel.Core
         public string QrValue { get; set; }
         public bool UseTextForQr { get; set; }
 
+        /// <summary>
+        /// 额外占位符（自由排版用），键为小写名称，例如 row → 行号。
+        /// 为空时只支持内置的 {text}/{barcode}/{qr}/{date} 等。
+        /// </summary>
+        public System.Collections.Generic.IDictionary<string, string> Tokens { get; set; }
+
         public LabelContent()
         {
             Text = "";

@@ -47,6 +47,8 @@ namespace EasyLabel.UI
         private Button _batchSequence;
         private Button _batchLayoutEdit;
         private LayoutPlan _batchLayoutPlan;
+        private FreeLayout _batchFreeLayout;
+        private Label _batchFreeSummary;
         private bool _batchLoading;
         private bool _batchPrinting;
         private FlowLayoutPanel _batchRightFlow;
@@ -302,8 +304,8 @@ namespace EasyLabel.UI
 
         private void BuildBatchOptionsCard(FlowLayoutPanel flow)
         {
-            var card = AddCard(flow, "批量版式", 664);
-            var table = UiKit.FormTable(17);
+            var card = AddCard(flow, "批量版式", 712);
+            var table = UiKit.FormTable(18);
 
             _batchLabelSize = UiKit.Combo();
             FillLabelSizeCombo(_batchLabelSize, _settings.GetLabelSpec());
@@ -420,7 +422,98 @@ namespace EasyLabel.UI
             table.Controls.Add(_batchShowHri, 0, 16);
             table.SetColumnSpan(_batchShowHri, 2);
 
+            var freeRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Height = 58,
+                BackColor = Theme.Card
+            };
+            var freeButtons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                BackColor = Theme.Card,
+                Margin = new Padding(0)
+            };
+            var openFree = UiKit.SecondaryButton("自由排版…");
+            openFree.Size = new Size(106, 30);
+            openFree.Margin = new Padding(0, 0, 8, 0);
+            openFree.Click += (s, e) => EditBatchFreeLayout();
+            var resetFree = UiKit.LinkButton("恢复自动排版");
+            resetFree.Size = new Size(100, 30);
+            resetFree.Click += (s, e) => ResetBatchFreeLayout();
+            freeButtons.Controls.Add(openFree);
+            freeButtons.Controls.Add(resetFree);
+            _batchFreeSummary = Theme.Label("当前：自动排版", 8.2f, Theme.Muted);
+            _batchFreeSummary.AutoSize = false;
+            _batchFreeSummary.Width = 300;
+            _batchFreeSummary.Height = 22;
+            _batchFreeSummary.TextAlign = ContentAlignment.MiddleLeft;
+            freeRow.Controls.Add(freeButtons);
+            freeRow.Controls.Add(_batchFreeSummary);
+            table.Controls.Add(freeRow, 0, 17);
+            table.SetColumnSpan(freeRow, 2);
+
             card.Content.Controls.Add(table);
+            UpdateBatchFreeSummary();
+        }
+
+        /// <summary>批量自由排版：所有行共用同一套元素位置，内容来自各自行。</summary>
+        private void EditBatchFreeLayout()
+        {
+            if (_batchRows == null || _batchRows.Count == 0)
+            {
+                MessageBox.Show(this, "请先导入 Excel/CSV 数据，或点击“模板”添加示例行。", "自由排版",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            BatchOptions options = GetBatchOptions();
+            BatchRow row = _batchRows.FirstOrDefault(r => r.Selected) ?? _batchRows[0];
+            LabelContent content = row.ToContent(options);
+
+            using (var dialog = new FreeLayoutDialog(GetBatchSpec(), content, options.CreateRenderOptions(), _batchFreeLayout))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                if (dialog.UseAutoLayout) _batchFreeLayout = null;
+                else
+                {
+                    _batchFreeLayout = dialog.LayoutResult.Clone();
+                    _batchLayoutPlan = null;
+                }
+                _batchMarginTop.Value = ToBatchMarginValue(_batchMarginTop, dialog.MarginTopMm);
+                _batchMarginBottom.Value = ToBatchMarginValue(_batchMarginBottom, dialog.MarginBottomMm);
+                _batchMarginLeft.Value = ToBatchMarginValue(_batchMarginLeft, dialog.MarginLeftMm);
+                _batchMarginRight.Value = ToBatchMarginValue(_batchMarginRight, dialog.MarginRightMm);
+                UpdateBatchFreeSummary();
+                OnBatchOptionsChanged();
+                SetStatus(dialog.UseAutoLayout
+                    ? "已恢复批量自动排版。"
+                    : "已应用批量自由排版：" + _batchFreeLayout.Summary + "；所有勾选行按该布局打印。", false, false);
+            }
+        }
+
+        private void ResetBatchFreeLayout()
+        {
+            if (_batchFreeLayout == null) return;
+            _batchFreeLayout = null;
+            UpdateBatchFreeSummary();
+            OnBatchOptionsChanged();
+            SetStatus("已退出批量自由排版。", false, false);
+        }
+
+        private void UpdateBatchFreeSummary()
+        {
+            if (_batchFreeSummary == null) return;
+            bool on = _batchFreeLayout != null && _batchFreeLayout.HasElements;
+            _batchFreeSummary.Text = on
+                ? "当前：自由排版 · " + _batchFreeLayout.Summary
+                : "当前：自动排版（按版式分区）";
+            _batchFreeSummary.ForeColor = on ? Theme.Accent : Theme.Muted;
         }
 
         private void OnBatchCellChanged()
@@ -557,6 +650,7 @@ namespace EasyLabel.UI
                 FontFamily = UiKit.GetFontFamily(_batchFontFamily),
                 Bold = _batchBold != null && _batchBold.Checked,
                 LayoutPlan = _batchLayoutPlan == null ? null : _batchLayoutPlan.Clone(),
+                FreeLayout = _batchFreeLayout == null ? null : _batchFreeLayout.Clone(),
                 BarcodeHeightPercent = (int)_batchBarcodeScale.Value,
                 QrSizePercent = (int)_batchQrScale.Value,
                 TextAlign = _batchTextAlign == null ? _settings.TextAlign : (TextAlign)Math.Max(0, _batchTextAlign.SelectedIndex)

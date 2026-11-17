@@ -422,6 +422,7 @@ namespace EasyLabel.Core
                     new XAttribute("barcodeHeightPercent", t.BarcodeHeightPercent),
                     new XAttribute("qrSizePercent", t.QrSizePercent)),
                 PlanToXml(t.LayoutPlan),
+                FreeToXml(t.FreeLayout),
                 new XElement("Content",
                     new XAttribute("showBarcode", t.ShowBarcode),
                     new XAttribute("barcodeFromText", t.BarcodeFromText),
@@ -447,6 +448,62 @@ namespace EasyLabel.Core
                 RectToXml("Text", plan.Text),
                 RectToXml("Barcode", plan.Barcode),
                 RectToXml("Qr", plan.Qr));
+        }
+
+        private static XElement FreeToXml(FreeLayout free)
+        {
+            if (free == null || !free.HasElements)
+                return new XElement("FreeLayout", new XAttribute("enabled", false));
+
+            var root = new XElement("FreeLayout",
+                new XAttribute("enabled", true),
+                new XAttribute("space", FreeLayout.SpaceMargins));
+            foreach (FreeElement element in free.Elements)
+            {
+                if (element == null) continue;
+                root.Add(new XElement("Element",
+                    new XAttribute("kind", (int)element.Kind),
+                    new XAttribute("name", element.Name ?? ""),
+                    new XAttribute("x", Num(element.Box.X)),
+                    new XAttribute("y", Num(element.Box.Y)),
+                    new XAttribute("width", Num(element.Box.Width)),
+                    new XAttribute("height", Num(element.Box.Height)),
+                    new XAttribute("fontMm", Num(element.FontSizeMm)),
+                    new XAttribute("bold", element.Bold),
+                    new XAttribute("align", (int)element.Align),
+                    new XAttribute("font", element.FontFamily ?? ""),
+                    // 内容单独用元素承载：属性值里的换行会被 XML 规范化成空格。
+                    new XElement("Content", element.Content ?? "")));
+            }
+            return root;
+        }
+
+        private static FreeLayout FreeFromXml(XElement free)
+        {
+            if (free == null || !ParseBool((string)free.Attribute("enabled"), false)) return null;
+
+            var layout = new FreeLayout();
+            foreach (XElement node in free.Elements("Element"))
+            {
+                var element = new FreeElement
+                {
+                    Kind = (FreeElementKind)ParseInt((string)node.Attribute("kind"), 0),
+                    Name = (string)node.Attribute("name") ?? "",
+                    Box = new RectangleF(
+                        (float)ParseDouble((string)node.Attribute("x"), 0),
+                        (float)ParseDouble((string)node.Attribute("y"), 0),
+                        (float)ParseDouble((string)node.Attribute("width"), 10),
+                        (float)ParseDouble((string)node.Attribute("height"), 4)),
+                    FontSizeMm = ParseDouble((string)node.Attribute("fontMm"), 0),
+                    Bold = ParseBool((string)node.Attribute("bold"), false),
+                    Align = (TextAlign)ParseInt((string)node.Attribute("align"), 1),
+                    FontFamily = (string)node.Attribute("font") ?? "",
+                    Content = (string)node.Element("Content") ?? ""
+                };
+                layout.Elements.Add(element);
+            }
+            // 旧格式不存在；坐标系标记留给将来兼容用（当前与 LayoutPlan 一致，都以安全区为原点）。
+            return layout.HasElements ? layout : null;
         }
 
         private static XElement RectToXml(string name, RectangleF rect)
@@ -518,6 +575,9 @@ namespace EasyLabel.Core
                 }
                 t.LayoutPlan = loaded;
             }
+
+            XElement free = root.Element("FreeLayout");
+            if (free != null) t.FreeLayout = FreeFromXml(free);
 
             XElement content = root.Element("Content");
             if (content != null)

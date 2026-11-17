@@ -26,6 +26,9 @@ namespace EasyLabel.Core
         public string FontFamily { get; set; }
         public bool Bold { get; set; }
         public LayoutPlan LayoutPlan { get; set; }
+
+        /// <summary>自由排版（多元素）；null 表示按版式自动分区。</summary>
+        public FreeLayout FreeLayout { get; set; }
         public int BarcodeHeightPercent { get; set; }
         public int QrSizePercent { get; set; }
         public int Dpi { get; set; }
@@ -48,6 +51,7 @@ namespace EasyLabel.Core
             FontFamily = "Microsoft YaHei UI";
             Bold = false;
             LayoutPlan = null;
+            FreeLayout = null;
             BarcodeHeightPercent = 100;
             QrSizePercent = 100;
             Dpi = 600;
@@ -73,6 +77,7 @@ namespace EasyLabel.Core
                 FontFamily = FontFamily,
                 Bold = Bold,
                 LayoutPlan = LayoutPlan,
+                FreeLayout = FreeLayout,
                 BarcodeHeightPercent = BarcodeHeightPercent,
                 QrSizePercent = QrSizePercent
             };
@@ -171,7 +176,13 @@ namespace EasyLabel.Core
                 UseTextForBarcode = false,
                 ShowQr = options.QrEnabled && qr.Length > 0,
                 QrValue = qr,
-                UseTextForQr = false
+                UseTextForQr = false,
+                // 自由排版里可以用 {row} 打上行号。
+                Tokens = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "row", RowNumber.ToString() },
+                    { "行号", RowNumber.ToString() }
+                }
             };
         }
 

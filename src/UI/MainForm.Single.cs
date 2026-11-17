@@ -41,6 +41,9 @@ namespace EasyLabel.UI
         private Button _singleSave;
         private Button _singleLayoutEdit;
         private LayoutPlan _singleLayoutPlan;
+        private FreeLayout _singleFreeLayout;
+        private Label _singleFreeSummary;
+        private Button _singleFreeReset;
 
         private Panel BuildSinglePage()
         {
@@ -140,11 +143,15 @@ namespace EasyLabel.UI
             var previewMenu = new ContextMenuStrip { Font = Theme.Ui(9f) };
             var menuEdit = new ToolStripMenuItem("布局编辑…");
             menuEdit.Click += (s, e) => EditSingleLayout();
+            var menuFree = new ToolStripMenuItem("自由排版（多元素）…");
+            menuFree.Click += (s, e) => EditSingleFreeLayout();
             var menuReset = new ToolStripMenuItem("恢复自动布局");
             menuReset.Click += (s, e) => ResetSingleLayout();
             previewMenu.Items.Add(menuEdit);
+            previewMenu.Items.Add(menuFree);
+            previewMenu.Items.Add(new ToolStripSeparator());
             previewMenu.Items.Add(menuReset);
-            previewMenu.Opening += (s, e) => menuReset.Enabled = _singleLayoutPlan != null;
+            previewMenu.Opening += (s, e) => menuReset.Enabled = _singleLayoutPlan != null || _singleFreeLayout != null;
             _singlePreview.ContextMenuStrip = previewMenu;
             var bottom = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Card };
             _singleInfo = Theme.Label("", 8.6f, Theme.Muted);
@@ -298,6 +305,57 @@ namespace EasyLabel.UI
             qt.SetColumnSpan(qrHint, 2);
             qrCard.Content.Controls.Add(qt);
 
+            var freeCard = AddCard(flow, "自由排版（多元素）", 190);
+            var freeLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                BackColor = Theme.Card
+            };
+            freeLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+            freeLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            freeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            var freeHint = Theme.Label(
+                "一张标签里可以放多个文字块，再配一维码和二维码，位置尺寸都随意（毫米）。\r\n" +
+                "文字块内容支持 {text} {barcode} {qr} {date} {time} {row} 等占位符。",
+                8.3f, Theme.Muted);
+            freeHint.AutoSize = false;
+            freeHint.Dock = DockStyle.Fill;
+            freeHint.TextAlign = ContentAlignment.TopLeft;
+            freeHint.Margin = new Padding(0);
+
+            _singleFreeSummary = Theme.Label("当前：自动排版（按版式分区）", 8.8f, Theme.Text);
+            _singleFreeSummary.AutoSize = false;
+            _singleFreeSummary.Dock = DockStyle.Fill;
+            _singleFreeSummary.TextAlign = ContentAlignment.MiddleLeft;
+            _singleFreeSummary.Margin = new Padding(0);
+
+            var freeButtons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor = Theme.Card,
+                Margin = new Padding(0)
+            };
+            var openFree = UiKit.PrimaryButton("打开自由排版…");
+            openFree.Size = new Size(140, 34);
+            openFree.Margin = new Padding(0, 2, 8, 0);
+            openFree.Click += (s, e) => EditSingleFreeLayout();
+            _singleFreeReset = UiKit.SecondaryButton("恢复自动排版");
+            _singleFreeReset.Size = new Size(112, 34);
+            _singleFreeReset.Margin = new Padding(0, 2, 0, 0);
+            _singleFreeReset.Click += (s, e) => ResetSingleFreeLayout();
+            freeButtons.Controls.Add(openFree);
+            freeButtons.Controls.Add(_singleFreeReset);
+
+            freeLayout.Controls.Add(freeHint, 0, 0);
+            freeLayout.Controls.Add(_singleFreeSummary, 0, 1);
+            freeLayout.Controls.Add(freeButtons, 0, 2);
+            freeCard.Content.Controls.Add(freeLayout);
+
             var layoutCard = AddCard(flow, "高级版式", 424);
             var lt = UiKit.FormTable(10);
 
@@ -403,6 +461,14 @@ namespace EasyLabel.UI
 
         private void EditSingleLayout()
         {
+            // 用了自由排版时，“布局编辑”直接进自由排版——三区块的位置已经不起作用，
+            // 再让用户改那边的数字只会白忙。
+            if (_singleFreeLayout != null)
+            {
+                EditSingleFreeLayout();
+                return;
+            }
+
             ApplyUiSettingsIfLoaded();
             LabelContent content = GetSingleContent();
             if (!content.HasText && !content.HasBarcode && !content.HasQr)
@@ -426,12 +492,81 @@ namespace EasyLabel.UI
             }
         }
 
+        /// <summary>打开自由排版编辑器：多文字块 + 一维码 + 二维码，位置尺寸自由。</summary>
+        private void EditSingleFreeLayout()
+        {
+            ApplyUiSettingsIfLoaded();
+            LabelContent content = GetSingleContent();
+            if (!content.HasText && !content.HasBarcode && !content.HasQr)
+            {
+                MessageBox.Show(this, "请先填写文字、一维码或二维码内容，再来排版。", "自由排版",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dialog = new FreeLayoutDialog(GetSingleSpec(), content, GetSingleOptions(), _singleFreeLayout))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                if (dialog.UseAutoLayout)
+                {
+                    _singleFreeLayout = null;
+                    SetStatus("已恢复自动排版：元素按当前边距和版式自动分区。", false, false);
+                }
+                else
+                {
+                    _singleFreeLayout = dialog.LayoutResult.Clone();
+                    _singleLayoutPlan = null;
+                    SetStatus("已应用自由排版：" + _singleFreeLayout.Summary + "；打印与保存 ZPL 都按该位置输出。", false, false);
+                }
+                ApplySingleMargins(dialog.MarginTopMm, dialog.MarginBottomMm, dialog.MarginLeftMm, dialog.MarginRightMm);
+                UpdateSingleFreeSummary();
+                SchedulePreview();
+            }
+        }
+
+        private void ResetSingleFreeLayout()
+        {
+            if (_singleFreeLayout == null) return;
+            _singleFreeLayout = null;
+            UpdateSingleFreeSummary();
+            SchedulePreview();
+            SetStatus("已退出自由排版，元素回到自动分区。", false, false);
+        }
+
+        private void UpdateSingleFreeSummary()
+        {
+            if (_singleFreeSummary == null) return;
+            if (_singleFreeLayout == null || !_singleFreeLayout.HasElements)
+            {
+                _singleFreeSummary.Text = "当前：自动排版（按版式分区）";
+                _singleFreeSummary.ForeColor = Theme.Muted;
+                if (_singleFreeReset != null) _singleFreeReset.Enabled = false;
+            }
+            else
+            {
+                _singleFreeSummary.Text = "当前：自由排版 · " + _singleFreeLayout.Summary;
+                _singleFreeSummary.ForeColor = Theme.Accent;
+                if (_singleFreeReset != null) _singleFreeReset.Enabled = true;
+            }
+        }
+
         /// <summary>布局编辑里可以就地拖边距，确定后回写到页面上的四个数字框。</summary>
         private void ApplySingleMargins(LayoutEditorDialog dialog)        {
-            _singleMarginTop.Value = ToMarginValue(_singleMarginTop, dialog.MarginTopMm);
-            _singleMarginBottom.Value = ToMarginValue(_singleMarginBottom, dialog.MarginBottomMm);
-            _singleMarginLeft.Value = ToMarginValue(_singleMarginLeft, dialog.MarginLeftMm);
-            _singleMarginRight.Value = ToMarginValue(_singleMarginRight, dialog.MarginRightMm);
+            ApplySingleMargins(dialog.MarginTopMm, dialog.MarginBottomMm, dialog.MarginLeftMm, dialog.MarginRightMm);
+        }
+
+        private void ApplySingleMargins(FreeLayoutDialog dialog)
+        {
+            ApplySingleMargins(dialog.MarginTopMm, dialog.MarginBottomMm, dialog.MarginLeftMm, dialog.MarginRightMm);
+        }
+
+        private void ApplySingleMargins(double top, double bottom, double left, double right)
+        {
+            _singleMarginTop.Value = ToMarginValue(_singleMarginTop, top);
+            _singleMarginBottom.Value = ToMarginValue(_singleMarginBottom, bottom);
+            _singleMarginLeft.Value = ToMarginValue(_singleMarginLeft, left);
+            _singleMarginRight.Value = ToMarginValue(_singleMarginRight, right);
         }
 
         private static decimal ToMarginValue(NumericUpDown num, double mm)
@@ -445,8 +580,10 @@ namespace EasyLabel.UI
         /// <summary>清掉自定义布局，回到“按边距自动排布”。</summary>
         private void ResetSingleLayout()
         {
-            if (_singleLayoutPlan == null) return;
+            if (_singleLayoutPlan == null && _singleFreeLayout == null) return;
             _singleLayoutPlan = null;
+            _singleFreeLayout = null;
+            UpdateSingleFreeSummary();
             SchedulePreview();
             SetStatus("已恢复自动布局，元素按当前边距重新排布。", false, false);
         }
@@ -468,6 +605,7 @@ namespace EasyLabel.UI
             o.TextAlign = _singleTextAlign == null ? _settings.TextAlign : _singleTextAlign.Value;
             o.Bold = _singleBold.Checked;
             o.LayoutPlan = _singleLayoutPlan == null ? null : _singleLayoutPlan.Clone();
+            o.FreeLayout = _singleFreeLayout == null ? null : _singleFreeLayout.Clone();
             o.BarcodeHeightPercent = (int)_singleBarcodeScale.Value;
             o.QrSizePercent = (int)_singleQrScale.Value;
             return o;
@@ -476,6 +614,7 @@ namespace EasyLabel.UI
         private void UpdateSinglePreview()
         {
             if (_singlePreview == null || _singleLabelSize == null) return;
+            UpdateSingleFreeSummary();
             LabelContent content = GetSingleContent();
             if (!content.HasText && !content.HasBarcode && !content.HasQr)
             {
